@@ -50,6 +50,7 @@ impl BuiltinManifest {
         self.builtins.iter().map(|builtin| builtin.name.as_str())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn simple_signatures(&self) -> Vec<(&str, Vec<(String, Type)>, Type)> {
         self.builtins
             .iter()

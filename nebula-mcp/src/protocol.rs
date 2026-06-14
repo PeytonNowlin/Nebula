@@ -19,6 +19,8 @@ pub struct JsonRpcNotification {
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcResponse {
+    /// Deserialized for protocol completeness; not read directly.
+    #[allow(dead_code)]
     pub jsonrpc: String,
     pub id: Option<Value>,
     pub result: Option<Value>,
@@ -41,6 +43,8 @@ pub struct CallToolResult {
 
 #[derive(Debug, Deserialize)]
 pub struct ToolContent {
+    /// Deserialized for protocol completeness; not read directly.
+    #[allow(dead_code)]
     #[serde(rename = "type")]
     pub content_type: String,
     #[serde(default)]

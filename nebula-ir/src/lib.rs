@@ -295,7 +295,7 @@ fn lower_expr_kind(expr: &Expr) -> IrExprKind {
         },
         Expr::Call { callee, args } => IrExprKind::Call {
             name: callee.node.clone(),
-            args: args.iter().map(|a| lower_expr(a)).collect(),
+            args: args.iter().map(lower_expr).collect(),
         },
         Expr::ProbeCall { name, args } => {
             let mut arg_map = HashMap::new();
@@ -307,7 +307,7 @@ fn lower_expr_kind(expr: &Expr) -> IrExprKind {
                 args: arg_map,
             }
         }
-        Expr::List(items) => IrExprKind::List(items.iter().map(|i| lower_expr(i)).collect()),
+        Expr::List(items) => IrExprKind::List(items.iter().map(lower_expr).collect()),
         Expr::Map(entries) => IrExprKind::Map(
             entries
                 .iter()

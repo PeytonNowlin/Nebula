@@ -42,10 +42,9 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
-      # Advisory for now (16 known warnings). Promote to `-- -D warnings` once the
-      # backlog is cleared so lint regressions fail the build.
+      # Hard gate: any clippy warning fails the build.
       - name: Clippy
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Build
         run: cargo build --all --locked

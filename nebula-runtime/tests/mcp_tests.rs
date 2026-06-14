@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
@@ -16,7 +16,7 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn run_notify_probe(manifest_path: &PathBuf) {
+fn run_notify_probe(manifest_path: &Path) {
     let src = r#"
 mission main {
   probe notify(channel: Str, message: Str) -> Void;

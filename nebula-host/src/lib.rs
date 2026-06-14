@@ -349,6 +349,7 @@ impl Host {
         }
     }
 
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     fn execute_ir_raw(
         &self,
         ir: IrProgram,
@@ -496,27 +497,6 @@ enum CompileFailure {
         source: String,
         errors: TypecheckErrors,
     },
-}
-
-fn adapt_run(result: Result<RunOutput, Report>) -> RunResult {
-    match result {
-        Ok(RunOutput {
-            printed,
-            return_value,
-            probe_events,
-            probes_called,
-        }) => RunResult::from_record(RunRecord::success(
-            "<unknown>".into(),
-            None,
-            probe_events,
-            0,
-            printed.clone(),
-            return_value.as_ref().map(value_json::value_to_json),
-            probes_called.clone(),
-        ))
-        .with_output(printed, return_value),
-        Err(report) => RunResult::fail(diagnostics_from_report(&report)),
-    }
 }
 
 fn diagnostics_from_report(report: &Report) -> Vec<DiagnosticJson> {

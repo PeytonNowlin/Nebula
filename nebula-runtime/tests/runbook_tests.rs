@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use jsonschema::{Resource, Retrieve, Uri, Validator};
@@ -80,7 +80,7 @@ fn test_temp(stem: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("nebula-runbook-{stem}-{suffix}.jsonl"))
 }
 
-fn write_runbook_manifest(stem: &str, probe_log: &PathBuf, mock_mcp: &PathBuf) -> PathBuf {
+fn write_runbook_manifest(stem: &str, probe_log: &Path, mock_mcp: &Path) -> PathBuf {
     let health_script = workspace_root().join("scripts/runbook_fetch_status.py");
     let manifest_path = std::env::temp_dir().join(format!("nebula-runbook-{stem}-manifest.json"));
     fs::write(

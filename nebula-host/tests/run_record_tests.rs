@@ -9,7 +9,6 @@ fn run_record_success_includes_program_and_timing() {
     assert_eq!(result.record.exit, 0);
     assert_eq!(result.record.program, "<source>");
     assert!(result.record.diagnostics.is_empty());
-    assert!(result.record.duration_ms > 0 || result.record.duration_ms == 0);
     assert_eq!(result.record.printed, vec!["hi"]);
     assert_eq!(result.record.return_value, Some(serde_json::Value::Null));
     assert!(result.record.probes_called.is_empty());

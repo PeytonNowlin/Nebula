@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use nebula_ir::lower;
@@ -33,8 +33,8 @@ fn capture_interpreter_stdout(file: &PathBuf, probe_manifest: Option<&PathBuf>) 
 }
 
 fn compile_and_run_python(
-    file: &PathBuf,
-    out_dir: &PathBuf,
+    file: &Path,
+    out_dir: &Path,
     probe_manifest: Option<PathBuf>,
 ) -> String {
     let source = fs::read_to_string(file).expect("read source");
@@ -46,8 +46,8 @@ fn compile_and_run_python(
         &loaded,
         &ir,
         &EmitOptions {
-            out_dir: out_dir.clone(),
-            entry_path: file.clone(),
+            out_dir: out_dir.to_path_buf(),
+            entry_path: file.to_path_buf(),
             probe_manifest,
             telemetry_path: None,
         },
@@ -81,6 +81,19 @@ fn transpiled_hello_matches_interpreter_stdout() {
 fn transpiled_import_demo_matches_interpreter_stdout() {
     let file = workspace_root().join("examples/import_demo.neb");
     let out_dir = std::env::temp_dir().join("nebula-py-parity-import_demo");
+    let _ = fs::remove_dir_all(&out_dir);
+    assert_eq!(
+        capture_interpreter_stdout(&file, None),
+        compile_and_run_python(&file, &out_dir, None)
+    );
+}
+
+#[test]
+fn transpiled_agent_counter_matches_interpreter_stdout() {
+    // Exercises the default `log` probe (jsonl to stderr), a while loop, and a
+    // telemetry block — no manifest needed.
+    let file = workspace_root().join("examples/agent_counter.neb");
+    let out_dir = std::env::temp_dir().join("nebula-py-parity-agent_counter");
     let _ = fs::remove_dir_all(&out_dir);
     assert_eq!(
         capture_interpreter_stdout(&file, None),

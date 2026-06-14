@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 
 use nebula_runtime::{list_probe_manifest, ProbeHost, ProbeInvocation, RegistryProbeHost, Value};
@@ -14,7 +14,7 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn write_manifest(dir: &PathBuf, name: &str, body: &str) -> PathBuf {
+fn write_manifest(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
     fs::write(&path, body).expect("write manifest");
     path
@@ -137,21 +137,19 @@ fn http_get_manifest_headers_are_applied() {
     let manifest = write_manifest(
         &dir,
         "http-headers.json",
-        &format!(
-            r#"{{
-  "secrets": {{
-    "api_token": {{ "value": "inline" }}
-  }},
-  "probes": {{
-    "fetch": {{
+        r#"{
+  "secrets": {
+    "api_token": { "value": "inline" }
+  },
+  "probes": {
+    "fetch": {
       "kind": "http_get",
-      "headers": {{
-        "X-Test-Token": "Bearer ${{secret:api_token}}"
-      }}
-    }}
-  }}
-}}"#
-        ),
+      "headers": {
+        "X-Test-Token": "Bearer ${secret:api_token}"
+      }
+    }
+  }
+}"#,
     );
 
     let mut host = RegistryProbeHost::with_defaults();

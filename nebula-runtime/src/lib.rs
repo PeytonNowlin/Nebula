@@ -846,5 +846,5 @@ fn probe_call_span(args: &HashMap<String, IrExpr>) -> Span {
     args.values()
         .map(|expr| expr.span.clone())
         .min_by_key(|span| span.start)
-        .unwrap_or_else(|| 0..0)
+        .unwrap_or(0..0)
 }
