@@ -1,0 +1,3 @@
+mission main {
+  print("Hello from Nebula");
+}

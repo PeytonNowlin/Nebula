@@ -6,6 +6,8 @@ use crate::lexer::{Token, TokenKind};
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum ParseError {
+    #[error(transparent)]
+    Lex(#[from] super::lexer::LexError),
     #[error("NEB-S002 [parse_error] unexpected token: expected {expected}, found {found}")]
     #[diagnostic(code(nebula::parse_error))]
     Unexpected {
@@ -432,8 +434,12 @@ impl Parser {
                 let ret = self.parse_type()?;
                 Type::Fn(params, Box::new(ret.node))
             }
-            Some(TokenKind::Ident(name)) => {
-                self.advance();
+            Some(TokenKind::Ident(_)) => {
+                let name = if let Some(Token { kind: TokenKind::Ident(n), .. }) = self.advance() {
+                    n
+                } else {
+                    unreachable!()
+                };
                 Type::Named(name)
             }
             Some(tok) => {
@@ -756,7 +762,8 @@ impl Parser {
                         span,
                     ))
                 } else {
-                    Ok(Spanned::new(Expr::Ident(Spanned::new(name, tok.span)), tok.span))
+                    let span = tok.span.clone();
+                    Ok(Spanned::new(Expr::Ident(Spanned::new(name, span.clone())), span))
                 }
             }
             kind => Err(ParseError::Unexpected {

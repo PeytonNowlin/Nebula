@@ -144,7 +144,7 @@ pub enum TokenKind {
     FloatLit(f64),
     #[regex(r#""([^"\\]|\\.)*""#, parse_string)]
     StrLit(String),
-    #[regex(r"[A-Za-z_][A-Za-z0-9_]*")]
+    #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
 
     #[regex(r"\n+")]

@@ -1,0 +1,14 @@
+mission main {
+  probe log(level: Str, message: Str) -> Void;
+
+  let mut count: Int = 0;
+
+  telemetry {
+    while count less than 3 do {
+      call log(level: "info", message: int_to_str(count));
+      set count = count plus 1;
+    }
+  }
+
+  print("mission complete");
+}

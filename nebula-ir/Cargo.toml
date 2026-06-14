@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
+nebula-types = { path = "../nebula-types" }
 miette.workspace = true
 thiserror.workspace = true
 

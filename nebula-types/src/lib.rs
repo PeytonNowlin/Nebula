@@ -4,7 +4,7 @@ use miette::Diagnostic;
 use nebula_ast::*;
 use thiserror::Error;
 
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Clone, Error, Diagnostic)]
 pub enum TypeError {
     #[error("NEB-T001 [type_error] undefined identifier `{name}`")]
     #[diagnostic(code(nebula::undefined_ident))]
@@ -160,7 +160,7 @@ impl Checker {
         }
     }
 
-    fn collect_top_level(&mut self, item: &TopLevel, errors: &mut Vec<TypeError>) {
+    fn collect_top_level(&mut self, item: &TopLevel, _errors: &mut Vec<TypeError>) {
         match item {
             TopLevel::Sector(sector) => {
                 for sitem in &sector.node.items {
@@ -291,11 +291,11 @@ impl Checker {
                 scope.define(name.node.clone(), ty.node.clone(), *mutable);
             }
             Stmt::Set { name, value } => {
-                let binding = scope.get(&name.node);
+                let binding = scope.get(&name.node).map(|(ty, mutable)| (ty.clone(), *mutable));
                 match binding {
-                    Some((bty, mutable)) if *mutable => {
+                    Some((bty, true)) => {
                         let value_ty = self.check_expr(&value.node, scope, errors);
-                        if !types_equal(bty, &value_ty) {
+                        if !types_equal(&bty, &value_ty) {
                             errors.push(TypeError::Mismatch {
                                 expected: bty.display(),
                                 found: value_ty.display(),
@@ -303,7 +303,7 @@ impl Checker {
                             });
                         }
                     }
-                    Some(_) => {
+                    Some((_, false)) => {
                         errors.push(TypeError::ImmutableAssign {
                             name: name.node.clone(),
                             span: name.span.clone(),
@@ -367,7 +367,7 @@ impl Checker {
             }
             Stmt::Call { name, args } => {
                 if let Some(probe) = self.probes.get(&name.node).cloned() {
-                    self.check_probe_call(&name.node, &probe, args, name.span.clone(), errors);
+                    self.check_probe_call(&probe, args, name.span.clone(), scope, errors);
                 } else {
                     errors.push(TypeError::UndefinedProbe {
                         name: name.node.clone(),
@@ -385,19 +385,17 @@ impl Checker {
 
     fn check_probe_call(
         &self,
-        _name: &str,
         probe: &ProbeInfo,
         args: &[Spanned<NamedArg>],
         span: Span,
+        scope: &mut Scope,
         errors: &mut Vec<TypeError>,
     ) {
         for (pname, pty) in &probe.params {
             let found = args.iter().find(|a| a.node.name.node == *pname);
             match found {
                 Some(arg) => {
-                    let arg_ty = Type::Void;
-                    let _ = arg_ty;
-                    let actual = self.check_expr_inner(&arg.node.value.node, &mut Scope::new(), errors);
+                    let actual = self.check_expr_inner(&arg.node.value.node, scope, errors);
                     if !types_equal(pty, &actual) {
                         errors.push(TypeError::Mismatch {
                             expected: pty.display(),
@@ -512,7 +510,7 @@ impl Checker {
                     }
                     for (i, (expected, arg)) in fn_info.params.iter().zip(args.iter()).enumerate() {
                         let arg_ty = self.check_expr_inner(&arg.node, scope, errors);
-                        if !types_equal(expected.1, &arg_ty) {
+                        if !types_equal(&expected.1, &arg_ty) {
                             errors.push(TypeError::Mismatch {
                                 expected: expected.1.display(),
                                 found: arg_ty.display(),

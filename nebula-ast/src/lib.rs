@@ -1,5 +1,3 @@
-use miette::SourceSpan;
-
 pub type Span = std::ops::Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
