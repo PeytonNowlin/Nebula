@@ -334,7 +334,7 @@ fn format_expr(out: &mut String, expr: &Expr) {
             out.push_str(" }");
         }
         Expr::FieldAccess { object, field } => {
-            out.push_str(&object.node);
+            format_expr(out, &object.node);
             out.push('.');
             out.push_str(&field.node);
         }

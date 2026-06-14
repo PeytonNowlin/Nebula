@@ -131,7 +131,7 @@ pub enum Expr {
     Some(Box<Spanned<Expr>>),
     Ident(Spanned<String>),
     FieldAccess {
-        object: Spanned<String>,
+        object: Box<Spanned<Expr>>,
         field: Spanned<String>,
     },
     Call {

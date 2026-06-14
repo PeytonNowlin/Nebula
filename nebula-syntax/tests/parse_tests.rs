@@ -22,6 +22,20 @@ mission main {
 }
 
 #[test]
+fn parse_expression_field_access() {
+    let src = r#"
+sector geo {
+  struct Point { x: Int; y: Int; }
+  fn origin() -> Point { return Point { x: 0, y: 0 }; }
+}
+mission main {
+  let x: Int = geo.origin().x;
+}
+"#;
+    parse(src).expect("expression field access should parse");
+}
+
+#[test]
 fn parse_sector_and_struct() {
     let src = r#"
 sector geo {

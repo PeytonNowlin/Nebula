@@ -180,6 +180,24 @@ impl Checker {
             .unwrap_or_else(|| name.to_string())
     }
 
+    fn struct_info_for_named(&self, name: &str) -> Option<&StructInfo> {
+        if let Some(info) = self.structs.get(name) {
+            return Some(info);
+        }
+        if let Some(key) = self.resolve_struct(name) {
+            return self.structs.get(&key);
+        }
+        let mut matches = self
+            .structs
+            .values()
+            .filter(|info| info.name == name)
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            return Some(matches.remove(0));
+        }
+        None
+    }
+
     fn resolve_type(&self, ty: &Type) -> Type {
         match ty {
             Type::Named(name) => Type::Named(self.resolve_type_name(name)),
@@ -227,21 +245,28 @@ impl Checker {
     fn collect_fn(&mut self, f: &FnDecl, sector: &str) {
         let name = f.name.node.clone();
         let qualified_name = qualify(sector, &name);
-        let params = f
-            .params
-            .iter()
-            .map(|p| (p.node.name.node.clone(), p.node.ty.node.clone()))
-            .collect();
-        self.functions.insert(
-            qualified_name.clone(),
-            FnInfo {
-                sector: sector.to_string(),
-                name,
-                qualified_name,
-                params,
-                return_type: f.return_type.node.clone(),
-            },
-        );
+        self.with_sector(sector, |checker| {
+            let params = f
+                .params
+                .iter()
+                .map(|p| {
+                    (
+                        p.node.name.node.clone(),
+                        checker.resolve_type(&p.node.ty.node),
+                    )
+                })
+                .collect();
+            checker.functions.insert(
+                qualified_name.clone(),
+                FnInfo {
+                    sector: sector.to_string(),
+                    name,
+                    qualified_name,
+                    params,
+                    return_type: checker.resolve_type(&f.return_type.node),
+                },
+            );
+        });
     }
 
     fn collect_struct(&mut self, s: &StructDecl, sector: &str) {
@@ -249,7 +274,10 @@ impl Checker {
         let qualified_name = qualify(sector, &name);
         let mut fields = HashMap::new();
         for f in &s.fields {
-            fields.insert(f.node.name.node.clone(), f.node.ty.node.clone());
+            fields.insert(
+                f.node.name.node.clone(),
+                self.with_sector(sector, |checker| checker.resolve_type(&f.node.ty.node)),
+            );
         }
         self.structs.insert(
             qualified_name.clone(),
@@ -320,8 +348,9 @@ impl Checker {
                 false,
             );
         }
+        let expected_return = self.resolve_type(&f.return_type.node);
         for stmt in &f.body {
-            self.check_stmt(&stmt.node, &mut scope, &f.return_type.node, errors);
+            self.check_stmt(&stmt.node, &mut scope, &expected_return, errors);
         }
     }
 
@@ -673,7 +702,7 @@ impl Checker {
                                 });
                             }
                         }
-                        return fn_info.return_type;
+                        return self.resolve_type(&fn_info.return_type);
                     }
                 }
                 errors.push(TypeError::UndefinedFn {
@@ -739,47 +768,45 @@ impl Checker {
                 }
             }
             Expr::FieldAccess { object, field } => {
-                if let Some(binding) = scope.get(&object.node) {
-                    if let Type::Named(struct_name) = &binding.0 {
-                        if let Some(info) = self.structs.get(struct_name) {
-                            if let Some(ty) = info.fields.get(&field.node) {
-                                return ty.clone();
+                if let Expr::Ident(name) = &object.node {
+                    if scope.get(&name.node).is_none() {
+                        if let Some(key) = self.resolve_struct(&name.node) {
+                            if let Some(info) = self.structs.get(&key) {
+                                if let Some(ty) = info.fields.get(&field.node) {
+                                    return ty.clone();
+                                }
+                                errors.push(TypeError::UnknownField {
+                                    struct_name: name.node.clone(),
+                                    field: field.node.clone(),
+                                    span: field.span.clone(),
+                                });
+                                return Type::Void;
                             }
-                            errors.push(TypeError::UnknownField {
-                                struct_name: struct_name.clone(),
-                                field: field.node.clone(),
-                                span: field.span.clone(),
-                            });
-                            return Type::Void;
                         }
                     }
-                    errors.push(TypeError::Mismatch {
-                        expected: "struct value".into(),
-                        found: binding.0.display(),
-                        span: object.span.clone(),
-                    });
-                    return Type::Void;
                 }
 
-                let struct_name = &object.node;
-                if let Some(info) = self.structs.get(struct_name) {
-                    if let Some(ty) = info.fields.get(&field.node) {
-                        ty.clone()
-                    } else {
+                let obj_ty = self.check_expr_inner(&object.node, scope, errors);
+                if let Type::Named(ref struct_name) = obj_ty {
+                    if let Some(info) = self.struct_info_for_named(struct_name) {
+                        if let Some(ty) = info.fields.get(&field.node) {
+                            return ty.clone();
+                        }
                         errors.push(TypeError::UnknownField {
-                            struct_name: struct_name.clone(),
+                            struct_name: info.qualified_name.clone(),
                             field: field.node.clone(),
                             span: field.span.clone(),
                         });
-                        Type::Void
+                        return Type::Void;
                     }
-                } else {
-                    errors.push(TypeError::UndefinedStruct {
-                        name: struct_name.clone(),
-                        span: object.span.clone(),
-                    });
-                    Type::Void
                 }
+
+                errors.push(TypeError::Mismatch {
+                    expected: "struct value".into(),
+                    found: obj_ty.display(),
+                    span: object.span.clone(),
+                });
+                Type::Void
             }
         }
     }

@@ -261,13 +261,7 @@ impl Runtime {
                 })
             }
             IrExpr::FieldAccess { object, field } => {
-                let val = self
-                    .env
-                    .get(object)
-                    .cloned()
-                    .ok_or(RuntimeError::UndefinedVar {
-                        name: object.clone(),
-                    })?;
+                let val = self.eval_expr(object)?;
                 match val {
                     Value::Struct { fields, .. } => fields
                         .get(field)

@@ -666,7 +666,87 @@ impl Parser {
                 span,
             ));
         }
-        self.parse_primary_expr()
+        self.parse_postfix_expr()
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let mut expr = self.parse_primary_expr()?;
+
+        loop {
+            if self.peek().map(|t| &t.kind) != Some(&TokenKind::Dot) {
+                break;
+            }
+
+            let _dot = self.advance().unwrap();
+            let member = self.parse_ident()?;
+
+            if self.peek().map(|t| &t.kind) == Some(&TokenKind::LParen) {
+                if let Some(base) = qual_name_from_expr(&expr.node) {
+                    self.advance();
+                    let mut args = Vec::new();
+                    if self.peek().map(|t| &t.kind) != Some(&TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_expr()?);
+                            if self.match_kind(TokenKind::Comma).is_none() {
+                                break;
+                            }
+                        }
+                    }
+                    let end = self.expect(TokenKind::RParen, ")")?.span.end;
+                    let qualified = format!("{base}.{}", member.node);
+                    let span = expr.span.start..end;
+                    expr = Spanned::new(
+                        Expr::Call {
+                            callee: Spanned::new(qualified, span.clone()),
+                            args,
+                        },
+                        span,
+                    );
+                    continue;
+                }
+            }
+
+            if self.peek().map(|t| &t.kind) == Some(&TokenKind::LBrace) {
+                if let Some(base) = qual_name_from_expr(&expr.node) {
+                    self.advance();
+                    let mut fields = Vec::new();
+                    if self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
+                        loop {
+                            let fname = self.parse_ident()?;
+                            self.expect(TokenKind::Colon, ":")?;
+                            let value = self.parse_expr()?;
+                            let span = fname.span.start..value.span.end;
+                            fields.push(Spanned::new(FieldInit { name: fname, value }, span));
+                            if self.match_kind(TokenKind::Comma).is_none() {
+                                break;
+                            }
+                        }
+                    }
+                    let end = self.expect(TokenKind::RBrace, "}")?.span.end;
+                    let qualified = format!("{base}.{}", member.node);
+                    let span = expr.span.start..end;
+                    expr = Spanned::new(
+                        Expr::StructLit {
+                            name: Spanned::new(qualified, span.clone()),
+                            fields,
+                        },
+                        span,
+                    );
+                    continue;
+                }
+            }
+
+            let span = expr.span.start..member.span.end;
+            expr = Spanned::new(
+                Expr::FieldAccess {
+                    object: Box::new(expr),
+                    field: member,
+                },
+                span,
+            );
+        }
+
+        Ok(expr)
     }
 
     fn parse_primary_expr(&mut self) -> Result<Spanned<Expr>, ParseError> {
@@ -750,68 +830,6 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.advance();
-                if self.peek().map(|t| &t.kind) == Some(&TokenKind::Dot) {
-                    self.advance();
-                    let member = self.parse_ident()?;
-                    let qualified = format!("{name}.{}", member.node);
-                    let qualified_span = tok.span.start..member.span.end;
-
-                    if self.peek().map(|t| &t.kind) == Some(&TokenKind::LParen) {
-                        self.advance();
-                        let mut args = Vec::new();
-                        if self.peek().map(|t| &t.kind) != Some(&TokenKind::RParen) {
-                            loop {
-                                args.push(self.parse_expr()?);
-                                if self.match_kind(TokenKind::Comma).is_none() {
-                                    break;
-                                }
-                            }
-                        }
-                        let end = self.expect(TokenKind::RParen, ")")?.span.end;
-                        return Ok(Spanned::new(
-                            Expr::Call {
-                                callee: Spanned::new(qualified, qualified_span.clone()),
-                                args,
-                            },
-                            start..end,
-                        ));
-                    }
-
-                    if self.peek().map(|t| &t.kind) == Some(&TokenKind::LBrace) {
-                        self.advance();
-                        let mut fields = Vec::new();
-                        if self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
-                            loop {
-                                let fname = self.parse_ident()?;
-                                self.expect(TokenKind::Colon, ":")?;
-                                let value = self.parse_expr()?;
-                                let span = fname.span.start..value.span.end;
-                                fields.push(Spanned::new(FieldInit { name: fname, value }, span));
-                                if self.match_kind(TokenKind::Comma).is_none() {
-                                    break;
-                                }
-                            }
-                        }
-                        let end = self.expect(TokenKind::RBrace, "}")?.span.end;
-                        return Ok(Spanned::new(
-                            Expr::StructLit {
-                                name: Spanned::new(qualified, qualified_span),
-                                fields,
-                            },
-                            start..end,
-                        ));
-                    }
-
-                    let span = tok.span.start..member.span.end;
-                    return Ok(Spanned::new(
-                        Expr::FieldAccess {
-                            object: Spanned::new(name, tok.span),
-                            field: member,
-                        },
-                        span,
-                    ));
-                }
-
                 if self.peek().map(|t| &t.kind) == Some(&TokenKind::LParen) {
                     self.advance();
                     let mut args = Vec::new();
@@ -910,5 +928,14 @@ impl Parser {
             }),
             None => Err(ParseError::Eof { span: self.eof_span() }),
         }
+    }
+}
+
+fn qual_name_from_expr(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Ident(name) => Some(name.node.clone()),
+        Expr::FieldAccess { object, field } => qual_name_from_expr(&object.node)
+            .map(|base| format!("{base}.{}", field.node)),
+        _ => None,
     }
 }

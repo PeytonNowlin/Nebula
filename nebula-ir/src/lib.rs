@@ -111,7 +111,7 @@ pub enum IrExpr {
         fields: HashMap<String, IrExpr>,
     },
     FieldAccess {
-        object: String,
+        object: Box<IrExpr>,
         field: String,
     },
 }
@@ -294,7 +294,7 @@ fn lower_expr(expr: &Expr) -> IrExpr {
             }
         }
         Expr::FieldAccess { object, field } => IrExpr::FieldAccess {
-            object: object.node.clone(),
+            object: Box::new(lower_expr(&object.node)),
             field: field.node.clone(),
         },
     }
