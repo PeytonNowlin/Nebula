@@ -138,7 +138,8 @@ mission main {
 - Bindings are immutable unless declared with `mut`.
 - `set` requires the target binding to be `mut`.
 - `mission main` is the program entry point.
-- `probe` declares an external capability; `call` invokes it at runtime.
+- `probe` declares an external capability; `call` invokes it at runtime through the probe host.
+- The probe host dispatches declared probes to handlers configured in a JSON manifest (`jsonl` logging or external `command` processes). The built-in `log` probe writes structured JSONL events.
 - `telemetry` blocks append structured JSONL traces for each statement executed within.
 - `emit` and `return` both exit the current function with a value.
 

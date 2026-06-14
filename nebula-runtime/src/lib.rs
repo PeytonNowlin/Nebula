@@ -1,12 +1,17 @@
+mod probe;
+
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
 
 use miette::Diagnostic;
 use nebula_ast::{BinaryOp, UnaryOp};
 use nebula_ir::{IrExpr, IrProgram, IrStmt};
 use serde::Serialize;
 use thiserror::Error;
+
+pub use probe::{ProbeHost, ProbeInvocation, RegistryProbeHost};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -34,6 +39,14 @@ pub enum RuntimeError {
     #[diagnostic(code(nebula::undefined_probe))]
     UndefinedProbe { name: String },
 
+    #[error("NEB-P002 [probe_error] probe `{name}` is not implemented by the host")]
+    #[diagnostic(code(nebula::probe_not_implemented))]
+    ProbeNotImplemented { name: String },
+
+    #[error("NEB-P003 [probe_error] probe `{name}` failed: {message}")]
+    #[diagnostic(code(nebula::probe_failed))]
+    ProbeFailed { name: String, message: String },
+
     #[error("NEB-R003 [runtime_error] undefined variable `{name}`")]
     #[diagnostic(code(nebula::undefined_var))]
     UndefinedVar { name: String },
@@ -49,6 +62,7 @@ pub struct Runtime {
     env: HashMap<String, Value>,
     functions: HashMap<String, nebula_ir::IrFunction>,
     probes: HashMap<String, nebula_ir::ProbeInfo>,
+    probe_host: RegistryProbeHost,
     current_sector: Option<String>,
     telemetry_path: Option<String>,
     telemetry_enabled: bool,
@@ -68,10 +82,21 @@ impl Runtime {
             env: HashMap::new(),
             functions,
             probes: program.probes.clone(),
+            probe_host: RegistryProbeHost::with_defaults(),
             current_sector: None,
             telemetry_path: None,
             telemetry_enabled: false,
         }
+    }
+
+    pub fn with_probe_host(mut self, host: RegistryProbeHost) -> Self {
+        self.probe_host = host;
+        self
+    }
+
+    pub fn with_probe_manifest(mut self, path: &Path) -> Result<Self, RuntimeError> {
+        self.probe_host.load_manifest(path)?;
+        Ok(self)
     }
 
     pub fn with_telemetry(mut self, path: String) -> Self {
@@ -144,13 +169,15 @@ impl Runtime {
                 if !self.probes.contains_key(&resolved) {
                     return Err(RuntimeError::UndefinedProbe { name: name.clone() });
                 }
-                let name = resolved;
                 let mut evaluated = HashMap::new();
                 for (k, v) in args {
                     evaluated.insert(k.clone(), self.eval_expr(v)?);
                 }
-                self.log_telemetry("probe", &name);
-                println!("[probe:{name}] {evaluated:?}");
+                self.log_telemetry("probe", &resolved);
+                self.probe_host.invoke(&ProbeInvocation {
+                    name: &resolved,
+                    args: evaluated,
+                })?;
                 Ok(None)
             }
             IrStmt::Telemetry { body } => {

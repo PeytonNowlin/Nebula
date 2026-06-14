@@ -8,7 +8,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 
 - **Keyword-based syntax** — arithmetic and comparisons use words instead of symbols, so parsers and agents can read source without ambiguity.
 - **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
-- **Probes** — declare external capabilities in source; `call` invokes them and the runtime logs the invocation (stdout today; host/MCP integration planned).
+- **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (structured JSONL `log` handler by default, external commands via `--probes` manifest).
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
 - **Imports** — compose programs from library modules with cycle and duplicate detection.
 - **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
@@ -122,7 +122,20 @@ Both exit the current function with a value. `return` is the conventional form; 
 
 ### Probes and telemetry
 
-Probes declare capabilities the host is expected to provide. `call` invokes them at runtime; today the interpreter logs probe name and arguments to stdout.
+Probes declare capabilities the host is expected to provide. `call` invokes them through the probe host:
+
+- **`log`** — built-in handler writes structured JSONL (`{"ts", "probe", "args"}`) to stderr
+- **Custom probes** — map probe names to external commands in a JSON manifest (`--probes probes/host.json`)
+
+Command probes use a stdin/stdout JSON protocol:
+
+```json
+// request (stdin)
+{"probe":"notify","args":{"channel":"ops","message":"ready"}}
+
+// response (stdout)
+{"status":"ok"}
+```
 
 ```nebula
 mission main {
@@ -191,7 +204,7 @@ The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md)
 ## Roadmap (not yet implemented)
 
 - Python transpiler (`nebula compile --target python`)
-- MCP / live probe host integration
+- MCP probe transport (command probe protocol is the current integration point)
 - Loadable stdlib beyond importable `.neb` modules
 
 ## Development

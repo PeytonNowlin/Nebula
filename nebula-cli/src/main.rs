@@ -35,6 +35,9 @@ enum Commands {
         file: PathBuf,
         #[arg(long)]
         telemetry: Option<PathBuf>,
+        /// JSON manifest mapping declared probes to host handlers
+        #[arg(long)]
+        probes: Option<PathBuf>,
     },
 }
 
@@ -49,7 +52,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Commands::Check { file } => check(&file),
         Commands::Fmt { file, write } => fmt(&file, write),
-        Commands::Run { file, telemetry } => run(&file, telemetry),
+        Commands::Run { file, telemetry, probes } => run(&file, telemetry, probes),
     };
 
     match result {
@@ -96,13 +99,22 @@ fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
     Ok(())
 }
 
-fn run(path: &PathBuf, telemetry: Option<PathBuf>) -> miette::Result<()> {
+fn run(
+    path: &PathBuf,
+    telemetry: Option<PathBuf>,
+    probes: Option<PathBuf>,
+) -> miette::Result<()> {
     let compiled = compile_pipeline(path)?;
     let typed = typecheck(&compiled.program)
         .map_err(|errors| report_with_source(&compiled.path, &compiled.source, errors))?;
     let ir = lower(&typed).map_err(Report::new)?;
 
     let mut runtime = Runtime::new(&ir);
+    if let Some(probe_manifest) = probes {
+        runtime = runtime
+            .with_probe_manifest(&probe_manifest)
+            .map_err(Report::new)?;
+    }
     if let Some(tel_path) = telemetry {
         runtime = runtime.with_telemetry(tel_path.to_string_lossy().into_owned());
     }
