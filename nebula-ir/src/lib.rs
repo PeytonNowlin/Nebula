@@ -174,10 +174,7 @@ pub fn lower(program: &TypedProgram) -> Result<IrProgram, IrError> {
                                     field.node.ty.node.clone(),
                                 );
                             }
-                            structs.insert(
-                                s.node.name.node.clone(),
-                                StructInfo { fields },
-                            );
+                            structs.insert(s.node.name.node.clone(), StructInfo { fields });
                         }
                         SectorItem::Probe(_) => {}
                     }
@@ -261,10 +258,7 @@ fn lower_stmt(stmt: &Stmt) -> IrStmt {
         Stmt::Call { name, args } => {
             let mut arg_map = HashMap::new();
             for arg in args {
-                arg_map.insert(
-                    arg.node.name.node.clone(),
-                    lower_expr(&arg.node.value),
-                );
+                arg_map.insert(arg.node.name.node.clone(), lower_expr(&arg.node.value));
             }
             IrStmt::ProbeCall {
                 name: name.node.clone(),
@@ -306,10 +300,7 @@ fn lower_expr_kind(expr: &Expr) -> IrExprKind {
         Expr::ProbeCall { name, args } => {
             let mut arg_map = HashMap::new();
             for arg in args {
-                arg_map.insert(
-                    arg.node.name.node.clone(),
-                    lower_expr(&arg.node.value),
-                );
+                arg_map.insert(arg.node.name.node.clone(), lower_expr(&arg.node.value));
             }
             IrExprKind::ProbeCall {
                 name: name.node.clone(),

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fs;
 use std::env;
+use std::fs;
 
 use crate::{RuntimeError, Value};
 
@@ -35,7 +35,9 @@ pub(crate) fn invoke_http_get(
             request = request.header(key, value);
         }
     }
-    let response = request.call().map_err(|err| probe_failed(name, err.to_string()))?;
+    let response = request
+        .call()
+        .map_err(|err| probe_failed(name, err.to_string()))?;
     let body = response
         .into_body()
         .read_to_string()
@@ -111,7 +113,9 @@ fn required_str_arg(
 fn probe_failed(name: &str, message: String) -> RuntimeError {
     RuntimeError::ProbeFailed {
         name: name.to_string(),
-        message, span: 0..0 }
+        message,
+        span: 0..0,
+    }
 }
 
 fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
@@ -125,13 +129,18 @@ fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
                 Value::Float(f)
             } else {
                 return Err(RuntimeError::Error {
-                    message: "unsupported JSON number in parsed value".into(), span: 0..0 });
+                    message: "unsupported JSON number in parsed value".into(),
+                    span: 0..0,
+                });
             }
         }
         serde_json::Value::String(s) => Value::Str(s),
-        serde_json::Value::Array(items) => {
-            Value::List(items.into_iter().map(json_to_value).collect::<Result<_, _>>()?)
-        }
+        serde_json::Value::Array(items) => Value::List(
+            items
+                .into_iter()
+                .map(json_to_value)
+                .collect::<Result<_, _>>()?,
+        ),
         serde_json::Value::Object(map) => Value::Map(
             map.into_iter()
                 .map(|(k, v)| json_to_value(v).map(|val| (k, val)))

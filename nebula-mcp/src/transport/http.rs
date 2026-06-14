@@ -24,9 +24,10 @@ pub struct HttpMcpSession {
 
 impl HttpMcpSession {
     pub fn connect(config: &McpServerConfig) -> Result<Self, McpError> {
-        let url = config.url.clone().ok_or_else(|| {
-            McpError::transport("http MCP server requires a url")
-        })?;
+        let url = config
+            .url
+            .clone()
+            .ok_or_else(|| McpError::transport("http MCP server requires a url"))?;
         let headers = config
             .headers
             .iter()
@@ -82,8 +83,9 @@ impl HttpMcpSession {
     }
 
     fn send_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse, McpError> {
-        let body = serde_json::to_string(request)
-            .map_err(|err| McpError::transport(format!("failed to encode JSON-RPC request: {err}")))?;
+        let body = serde_json::to_string(request).map_err(|err| {
+            McpError::transport(format!("failed to encode JSON-RPC request: {err}"))
+        })?;
         let (text, session_id) = self.post_json(&body)?;
         if let Some(session_id) = session_id {
             if let Ok(mut guard) = self.session_id.lock() {
@@ -111,9 +113,8 @@ impl HttpMcpSession {
         if trimmed.starts_with("event:") || trimmed.contains("\ndata:") {
             return Self::parse_sse_body(trimmed, expected_id);
         }
-        let response: JsonRpcResponse = serde_json::from_str(trimmed).map_err(|err| {
-            McpError::transport(format!("invalid JSON-RPC HTTP response: {err}"))
-        })?;
+        let response: JsonRpcResponse = serde_json::from_str(trimmed)
+            .map_err(|err| McpError::transport(format!("invalid JSON-RPC HTTP response: {err}")))?;
         Self::validate_response_id(&response, expected_id)?;
         Ok(response)
     }
@@ -154,9 +155,10 @@ impl HttpMcpSession {
     }
 
     fn ensure_initialized(&self) -> Result<(), McpError> {
-        let mut initialized = self.initialized.lock().map_err(|_| {
-            McpError::transport("MCP HTTP session lock poisoned")
-        })?;
+        let mut initialized = self
+            .initialized
+            .lock()
+            .map_err(|_| McpError::transport("MCP HTTP session lock poisoned"))?;
         if *initialized {
             return Ok(());
         }

@@ -32,11 +32,7 @@ impl TypecheckErrors {
         self.errors.iter()
     }
 
-    pub fn to_diagnostic_json(
-        &self,
-        path: impl AsRef<Path>,
-        source: &str,
-    ) -> Vec<DiagnosticJson> {
+    pub fn to_diagnostic_json(&self, path: impl AsRef<Path>, source: &str) -> Vec<DiagnosticJson> {
         let file = path.as_ref().display().to_string();
         self.errors()
             .iter()

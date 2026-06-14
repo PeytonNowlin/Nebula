@@ -18,9 +18,7 @@ fn run_record_success_includes_program_and_timing() {
 #[test]
 fn run_record_failure_includes_diagnostics() {
     let host = Host::new();
-    let result = host.run_source(
-        r#"mission main { let x: Int = 1 div 0; print(int_to_str(x)); }"#,
-    );
+    let result = host.run_source(r#"mission main { let x: Int = 1 div 0; print(int_to_str(x)); }"#);
     assert!(!result.ok);
     assert_eq!(result.record.exit, 1);
     assert_eq!(result.record.diagnostics.len(), 1);
@@ -50,7 +48,10 @@ mission main {
     assert_eq!(result.record.probe_events.len(), 1);
     assert_eq!(result.record.probe_events[0].probe, "log");
     assert_eq!(
-        result.record.probe_events[0].args.get("message").and_then(|v| v.as_str()),
+        result.record.probe_events[0]
+            .args
+            .get("message")
+            .and_then(|v| v.as_str()),
         Some("ready")
     );
     assert_eq!(

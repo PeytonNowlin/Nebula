@@ -81,14 +81,22 @@ impl Parser {
             return Ok(());
         };
         let synonym = match word.as_str() {
-            "less" if matches!(
-                self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::Ident(than)) if than == "than"
-            ) => Some(("lt", "less than")),
-            "greater" if matches!(
-                self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::Ident(than)) if than == "than"
-            ) => Some(("gt", "greater than")),
+            "less"
+                if matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Ident(than)) if than == "than"
+                ) =>
+            {
+                Some(("lt", "less than"))
+            }
+            "greater"
+                if matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Ident(than)) if than == "than"
+                ) =>
+            {
+                Some(("gt", "greater than"))
+            }
             _ => None,
         };
         if let Some((canonical, found)) = synonym {
@@ -316,10 +324,7 @@ impl Parser {
                 self.expect(TokenKind::LParen, "(")?;
                 let inner = self.parse_expr()?;
                 let end = self.expect(TokenKind::RParen, ")")?.span.end;
-                Ok(Spanned::new(
-                    Expr::Some(Box::new(inner)),
-                    start..end,
-                ))
+                Ok(Spanned::new(Expr::Some(Box::new(inner)), start..end))
             }
             TokenKind::LParen => {
                 self.advance();
@@ -365,10 +370,7 @@ impl Parser {
                 self.expect(TokenKind::LParen, "(")?;
                 let args = self.parse_named_arg_list()?;
                 let end = self.expect(TokenKind::RParen, ")")?.span.end;
-                Ok(Spanned::new(
-                    Expr::ProbeCall { name, args },
-                    start..end,
-                ))
+                Ok(Spanned::new(Expr::ProbeCall { name, args }, start..end))
             }
             TokenKind::Ident(name) => {
                 self.advance();
@@ -416,7 +418,10 @@ impl Parser {
                     ))
                 } else {
                     let span = tok.span.clone();
-                    Ok(Spanned::new(Expr::Ident(Spanned::new(name, span.clone())), span))
+                    Ok(Spanned::new(
+                        Expr::Ident(Spanned::new(name, span.clone())),
+                        span,
+                    ))
                 }
             }
             kind => Err(ParseError::Unexpected {
@@ -431,8 +436,9 @@ impl Parser {
 fn qual_name_from_expr(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Ident(name) => Some(name.node.clone()),
-        Expr::FieldAccess { object, field } => qual_name_from_expr(&object.node)
-            .map(|base| format!("{base}.{}", field.node)),
+        Expr::FieldAccess { object, field } => {
+            qual_name_from_expr(&object.node).map(|base| format!("{base}.{}", field.node))
+        }
         _ => None,
     }
 }

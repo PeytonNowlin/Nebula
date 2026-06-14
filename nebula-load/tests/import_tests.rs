@@ -31,7 +31,10 @@ fn load_std_math_module() {
         )
     });
 
-    assert!(has_math_fn, "merged program should include imported math sector");
+    assert!(
+        has_math_fn,
+        "merged program should include imported math sector"
+    );
     assert!(
         !loaded
             .items
@@ -56,8 +59,7 @@ mission main {
     .expect("write lib");
 
     let entry = dir.path().join("main.neb");
-    fs::write(&entry, r#"import "lib.neb"; mission main { print("ok"); }"#)
-        .expect("write main");
+    fs::write(&entry, r#"import "lib.neb"; mission main { print("ok"); }"#).expect("write main");
 
     let source = fs::read_to_string(&entry).expect("read main");
     let program = parse(&source).expect("parse main");
@@ -71,8 +73,16 @@ fn reject_circular_imports() {
     let a = dir.path().join("a.neb");
     let b = dir.path().join("b.neb");
 
-    fs::write(&a, r#"import "b.neb"; sector a { fn one() -> Int { return 1; } }"#).unwrap();
-    fs::write(&b, r#"import "a.neb"; sector b { fn two() -> Int { return 2; } }"#).unwrap();
+    fs::write(
+        &a,
+        r#"import "b.neb"; sector a { fn one() -> Int { return 1; } }"#,
+    )
+    .unwrap();
+    fs::write(
+        &b,
+        r#"import "a.neb"; sector b { fn two() -> Int { return 2; } }"#,
+    )
+    .unwrap();
 
     let entry = dir.path().join("main.neb");
     fs::write(&entry, r#"import "a.neb"; mission main { print("ok"); }"#).unwrap();

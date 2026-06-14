@@ -10,7 +10,11 @@ use nebula_runtime::ResourceLimits;
 use serde::Serialize;
 
 #[derive(Parser)]
-#[command(name = "nebula", version, about = "Nebula — agent-native programming language")]
+#[command(
+    name = "nebula",
+    version,
+    about = "Nebula — agent-native programming language"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -157,21 +161,27 @@ fn main() -> ExitCode {
                 host.try_parse_file(&file)
             };
             match program_result {
-                Ok(program) => emit_json_export(json, &AstExport {
-                    entry: file.display().to_string(),
-                    loaded: load,
-                    program: &program,
-                }),
+                Ok(program) => emit_json_export(
+                    json,
+                    &AstExport {
+                        entry: file.display().to_string(),
+                        loaded: load,
+                        program: &program,
+                    },
+                ),
                 Err(err) => emit_failure(err, None, json),
             }
         }
         Commands::Ir { file, json } => {
             let host = Host::new();
             match host.try_lower_file(&file) {
-                Ok(ir) => emit_json_export(json, &IrExport {
-                    entry: file.display().to_string(),
-                    ir: &ir,
-                }),
+                Ok(ir) => emit_json_export(
+                    json,
+                    &IrExport {
+                        entry: file.display().to_string(),
+                        ir: &ir,
+                    },
+                ),
                 Err(err) => emit_failure(err, None, json),
             }
         }
@@ -266,10 +276,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn host_with_config(
-    probe_manifest: Option<PathBuf>,
-    telemetry_path: Option<PathBuf>,
-) -> Host {
+fn host_with_config(probe_manifest: Option<PathBuf>, telemetry_path: Option<PathBuf>) -> Host {
     if probe_manifest.is_some() || telemetry_path.is_some() {
         Host::with_config(HostConfig {
             probe_manifest,
@@ -346,12 +353,7 @@ fn emit_failure(err: Report, fallback_source: Option<&str>, json: bool) -> ExitC
     ExitCode::FAILURE
 }
 
-fn list_probes(
-    host: &Host,
-    path: &PathBuf,
-    discover_mcp: bool,
-    json: bool,
-) -> miette::Result<()> {
+fn list_probes(host: &Host, path: &PathBuf, discover_mcp: bool, json: bool) -> miette::Result<()> {
     let report = host.list_probes(path, discover_mcp)?;
     if json {
         let payload = serde_json::to_string(&report).into_diagnostic()?;

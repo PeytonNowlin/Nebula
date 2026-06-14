@@ -1,7 +1,7 @@
 use nebula_ir::lower;
+use nebula_runtime::Runtime;
 use nebula_syntax::parse;
 use nebula_types::typecheck;
-use nebula_runtime::Runtime;
 
 #[test]
 fn expression_field_access_evaluates() {

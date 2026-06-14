@@ -44,7 +44,9 @@ impl Parser {
                 found: format!("{:?}", tok.kind),
                 span: tok.span.clone(),
             }),
-            None => Err(ParseError::Eof { span: self.eof_span() }),
+            None => Err(ParseError::Eof {
+                span: self.eof_span(),
+            }),
         }
     }
 
@@ -91,7 +93,11 @@ impl Parser {
                     span: self.peek().unwrap().span.clone(),
                 });
             }
-            None => return Err(ParseError::Eof { span: self.eof_span() }),
+            None => {
+                return Err(ParseError::Eof {
+                    span: self.eof_span(),
+                })
+            }
         };
         let end = self
             .tokens
@@ -123,7 +129,9 @@ impl Parser {
                 found: format!("{:?}", tok),
                 span: self.peek().unwrap().span.clone(),
             }),
-            None => Err(ParseError::Eof { span: self.eof_span() }),
+            None => Err(ParseError::Eof {
+                span: self.eof_span(),
+            }),
         }
     }
 
@@ -290,7 +298,11 @@ impl Parser {
                 Type::Fn(params, Box::new(ret.node))
             }
             Some(TokenKind::Ident(_)) => {
-                let first = if let Some(Token { kind: TokenKind::Ident(n), .. }) = self.advance() {
+                let first = if let Some(Token {
+                    kind: TokenKind::Ident(n),
+                    ..
+                }) = self.advance()
+                {
                     n
                 } else {
                     unreachable!()
@@ -310,7 +322,11 @@ impl Parser {
                     span: self.peek().unwrap().span.clone(),
                 });
             }
-            None => return Err(ParseError::Eof { span: self.eof_span() }),
+            None => {
+                return Err(ParseError::Eof {
+                    span: self.eof_span(),
+                })
+            }
         };
         let end = self
             .tokens
@@ -346,7 +362,9 @@ impl Parser {
                 found: format!("{:?}", tok.kind),
                 span: tok.span,
             }),
-            None => Err(ParseError::Eof { span: self.eof_span() }),
+            None => Err(ParseError::Eof {
+                span: self.eof_span(),
+            }),
         }
     }
 
@@ -379,7 +397,9 @@ impl Parser {
                 found: format!("{:?}", tok.kind),
                 span: tok.span,
             }),
-            None => Err(ParseError::Eof { span: self.eof_span() }),
+            None => Err(ParseError::Eof {
+                span: self.eof_span(),
+            }),
         }
     }
 }

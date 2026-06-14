@@ -136,7 +136,10 @@ mission main {
 }
 "#;
     let program = parse(src).expect("parse");
-    assert!(typecheck(&program).is_err(), "get on a List should fail to typecheck");
+    assert!(
+        typecheck(&program).is_err(),
+        "get on a List should fail to typecheck"
+    );
 }
 
 #[test]
@@ -148,7 +151,10 @@ mission main {
 }
 "#;
     let program = parse(src).expect("parse");
-    assert!(typecheck(&program).is_err(), "at with a Str index should fail to typecheck");
+    assert!(
+        typecheck(&program).is_err(),
+        "at with a Str index should fail to typecheck"
+    );
 }
 
 #[test]

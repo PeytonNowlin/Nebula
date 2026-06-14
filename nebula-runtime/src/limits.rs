@@ -56,14 +56,20 @@ pub(crate) fn value_footprint(value: &Value) -> usize {
         Value::Map(map) => {
             let mut size = SCALAR.saturating_add(map.len() * 16);
             for (key, val) in map {
-                size = size.saturating_add(key.len()).saturating_add(value_footprint(val));
+                size = size
+                    .saturating_add(key.len())
+                    .saturating_add(value_footprint(val));
             }
             size
         }
         Value::Struct { name, fields } => {
-            let mut size = SCALAR.saturating_add(name.len()).saturating_add(fields.len() * 16);
+            let mut size = SCALAR
+                .saturating_add(name.len())
+                .saturating_add(fields.len() * 16);
             for (key, val) in fields {
-                size = size.saturating_add(key.len()).saturating_add(value_footprint(val));
+                size = size
+                    .saturating_add(key.len())
+                    .saturating_add(value_footprint(val));
             }
             size
         }
@@ -119,9 +125,7 @@ impl Runtime {
         let Some(limit) = self.limits.max_memory_bytes else {
             return Ok(());
         };
-        let projected = self
-            .memory_bytes
-            .saturating_add(value_footprint(value));
+        let projected = self.memory_bytes.saturating_add(value_footprint(value));
         if projected > limit {
             return Err(RuntimeError::MemoryLimitExceeded {
                 limit_bytes: limit,
@@ -154,9 +158,7 @@ impl Runtime {
         if let Some(old) = self.env.get(name) {
             self.memory_bytes = self.memory_bytes.saturating_sub(value_footprint(old));
         }
-        self.memory_bytes = self
-            .memory_bytes
-            .saturating_add(value_footprint(&value));
+        self.memory_bytes = self.memory_bytes.saturating_add(value_footprint(&value));
         self.env.insert(name.to_string(), value);
         self.check_memory_limit()
     }
@@ -166,11 +168,7 @@ impl Runtime {
         name: &str,
         before: usize,
     ) -> Result<(), RuntimeError> {
-        let after = self
-            .env
-            .get(name)
-            .map(value_footprint)
-            .unwrap_or(0);
+        let after = self.env.get(name).map(value_footprint).unwrap_or(0);
         self.memory_bytes = self
             .memory_bytes
             .saturating_sub(before)
@@ -179,10 +177,7 @@ impl Runtime {
     }
 
     pub(crate) fn env_footprint(&self, name: &str) -> usize {
-        self.env
-            .get(name)
-            .map(value_footprint)
-            .unwrap_or(0)
+        self.env.get(name).map(value_footprint).unwrap_or(0)
     }
 
     pub(crate) fn take_env_budget(&mut self) -> (std::collections::HashMap<String, Value>, usize) {

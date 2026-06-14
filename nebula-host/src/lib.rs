@@ -21,19 +21,17 @@ use std::time::Instant;
 use miette::Report;
 use nebula_ast::{NebError, Program};
 use nebula_diagnostics::diagnostics_from_report_with_source;
-use nebula_runtime::RuntimeError;
 use nebula_python::{emit_workspace, EmitOptions};
+use nebula_runtime::RuntimeError;
 use nebula_runtime::{list_probe_manifest, value_json, Runtime};
-use nebula_types::{
-    diagnostics_from_type_errors, typecheck, TypedProgram, TypecheckErrors,
-};
+use nebula_types::{diagnostics_from_type_errors, typecheck, TypecheckErrors, TypedProgram};
 
 pub use nebula_ast::DiagnosticJson;
 pub use nebula_ast::Program as AstProgram;
 pub use nebula_ir::IrProgram;
 pub use nebula_load::LoadedProgram;
-pub use nebula_runtime::Value as HostValue;
 pub use nebula_python::EmitResult;
+pub use nebula_runtime::Value as HostValue;
 pub use nebula_runtime::{
     DeclaredProbe, McpServerReport, ProbeListReport, ResourceLimits, SecretsStore,
 };
@@ -157,10 +155,7 @@ impl Host {
 
     /// Typecheck in-memory source. Returns structured diagnostics for agent loops.
     pub fn check_source(&self, source: &str) -> CheckResult {
-        self.check_workspace(Pipeline::source(
-            source,
-            self.entry_label(None),
-        ))
+        self.check_workspace(Pipeline::source(source, self.entry_label(None)))
     }
 
     /// Typecheck a file on disk. Returns structured diagnostics for agent loops.
@@ -170,9 +165,7 @@ impl Host {
 
     /// Typecheck a file on disk. Returns miette reports for CLI display.
     pub fn try_check_file(&self, path: impl AsRef<Path>) -> miette::Result<()> {
-        Pipeline::file(path.as_ref())
-            .typecheck()
-            .map(|_| ())
+        Pipeline::file(path.as_ref()).typecheck().map(|_| ())
     }
 
     /// Execute in-memory source. Returns structured output for agent loops.
@@ -180,10 +173,7 @@ impl Host {
         let started = Instant::now();
         let program = self.entry_label(None).to_string();
         let telemetry_path = self.telemetry_path_string();
-        match self.compile_ir(Pipeline::source(
-            source,
-            self.entry_label(None),
-        )) {
+        match self.compile_ir(Pipeline::source(source, self.entry_label(None))) {
             Ok(compiled) => self.finish_run(compiled, program, telemetry_path, started),
             Err(CompileFailure::Typecheck {
                 entry,
@@ -345,20 +335,17 @@ impl Host {
                 probes_called.clone(),
             ))
             .with_output(printed, return_value),
-            Err((err, probe_events, printed, probes_called)) => RunResult::from_record(
-                RunRecord::failure(
+            Err((err, probe_events, printed, probes_called)) => {
+                RunResult::from_record(RunRecord::failure(
                     program,
-                    vec![err.to_diagnostic_json(
-                        Some(&compiled.entry),
-                        Some(&compiled.source),
-                    )],
+                    vec![err.to_diagnostic_json(Some(&compiled.entry), Some(&compiled.source))],
                     telemetry_path,
                     probe_events,
                     duration_ms,
                     printed,
                     probes_called,
-                ),
-            ),
+                ))
+            }
         }
     }
 
@@ -485,11 +472,7 @@ impl RunResult {
         ))
     }
 
-    fn with_output(
-        mut self,
-        printed: Vec<String>,
-        return_value: Option<HostValue>,
-    ) -> Self {
+    fn with_output(mut self, printed: Vec<String>, return_value: Option<HostValue>) -> Self {
         self.printed = printed;
         self.return_value = return_value;
         self

@@ -131,8 +131,7 @@ fn parse_input(input: &PipelineInput<'_>) -> Result<ParsedArtifact, Report> {
         PipelineInput::File { path } => {
             let source = fs::read_to_string(path).into_diagnostic()?;
             let entry = path.display().to_string();
-            let program =
-                parse(&source).map_err(|err| report_with_source(path, &source, err))?;
+            let program = parse(&source).map_err(|err| report_with_source(path, &source, err))?;
             Ok(ParsedArtifact {
                 entry,
                 source,
@@ -165,9 +164,8 @@ fn load_workspace_from(
 }
 
 fn typecheck_loaded(workspace: &WorkspaceArtifact) -> Result<TypedProgram, Report> {
-    typecheck(&workspace.loaded.merged).map_err(|errors| {
-        report_with_source(&workspace.entry, &workspace.source, errors)
-    })
+    typecheck(&workspace.loaded.merged)
+        .map_err(|errors| report_with_source(&workspace.entry, &workspace.source, errors))
 }
 
 fn source_only_loaded(program: Program) -> LoadedProgram {

@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use nebula_ir::lower;
-use nebula_runtime::{ProbeInvocation, ProbeHost, RegistryProbeHost, Runtime};
+use nebula_runtime::{ProbeHost, ProbeInvocation, RegistryProbeHost, Runtime};
 use nebula_syntax::parse;
 use nebula_types::typecheck;
 
@@ -219,7 +219,8 @@ fn mcp_transport_error_reports_neb_p004() {
     .expect("write manifest");
 
     let mut host = RegistryProbeHost::with_defaults();
-    host.load_manifest(&manifest_path, None).expect("load manifest");
+    host.load_manifest(&manifest_path, None)
+        .expect("load manifest");
     let err = host
         .invoke(&ProbeInvocation {
             name: "notify",

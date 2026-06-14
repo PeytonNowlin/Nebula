@@ -53,13 +53,16 @@ impl McpConnectionManager {
         arguments: HashMap<String, Value>,
     ) -> Result<(), McpError> {
         let config = self.servers.get(server_id).ok_or_else(|| {
-            McpError::config(format!("unknown MCP server `{server_id}` in probe manifest"))
+            McpError::config(format!(
+                "unknown MCP server `{server_id}` in probe manifest"
+            ))
         })?;
         let args = Value::Object(arguments.into_iter().collect::<Map<String, Value>>());
 
-        let mut sessions = self.sessions.lock().map_err(|_| {
-            McpError::transport("MCP connection manager lock poisoned")
-        })?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| McpError::transport("MCP connection manager lock poisoned"))?;
 
         if !sessions.contains_key(server_id) {
             let session = match config.transport {
@@ -77,12 +80,15 @@ impl McpConnectionManager {
 
     pub fn list_tools(&self, server_id: &str) -> Result<Vec<McpToolDescriptor>, McpError> {
         let config = self.servers.get(server_id).ok_or_else(|| {
-            McpError::config(format!("unknown MCP server `{server_id}` in probe manifest"))
+            McpError::config(format!(
+                "unknown MCP server `{server_id}` in probe manifest"
+            ))
         })?;
 
-        let mut sessions = self.sessions.lock().map_err(|_| {
-            McpError::transport("MCP connection manager lock poisoned")
-        })?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| McpError::transport("MCP connection manager lock poisoned"))?;
 
         if !sessions.contains_key(server_id) {
             let session = match config.transport {

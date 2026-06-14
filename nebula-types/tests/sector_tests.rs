@@ -51,7 +51,9 @@ mission main {
 "#;
     let program = parse(src).expect("parse");
     let errors = typecheck(&program).expect_err("unqualified call from mission should fail");
-    assert!(errors.iter().any(|e| matches!(e, TypeError::UndefinedFn { .. })));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, TypeError::UndefinedFn { .. })));
 }
 
 #[test]

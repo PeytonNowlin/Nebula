@@ -21,9 +21,7 @@ pub fn golden_dir() -> PathBuf {
 /// Compare `actual` against `golden/{category}/{name}.golden`.
 /// Set `NEBULA_UPDATE_GOLDEN=1` to rewrite goldens.
 pub fn assert_golden(category: &str, name: &str, actual: &str) {
-    let path = golden_dir()
-        .join(category)
-        .join(format!("{name}.golden"));
+    let path = golden_dir().join(category).join(format!("{name}.golden"));
     if std::env::var("NEBULA_UPDATE_GOLDEN").is_ok() {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
@@ -53,9 +51,7 @@ pub fn compile_source(src: &str) -> nebula_ir::IrProgram {
 }
 
 pub fn compile_file(path: &Path) -> nebula_ir::IrProgram {
-    Host::new()
-        .try_lower_file(path)
-        .expect("compile file")
+    Host::new().try_lower_file(path).expect("compile file")
 }
 
 pub fn run_source(src: &str) {

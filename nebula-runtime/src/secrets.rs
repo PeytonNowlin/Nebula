@@ -22,9 +22,9 @@ pub fn resolve_secrets(
     for (name, binding) in bindings {
         let value = match binding {
             SecretBinding::Env { env } => env::var(env).map_err(|_| RuntimeError::Error {
-                message: format!(
-                    "secret `{name}` references unset environment variable `{env}`"
-                ), span: 0..0 })?,
+                message: format!("secret `{name}` references unset environment variable `{env}`"),
+                span: 0..0,
+            })?,
             SecretBinding::Value { value } => value.clone(),
         };
         store.insert(name.clone(), value);
@@ -45,11 +45,15 @@ pub fn substitute_secrets(template: &str, store: &SecretsStore) -> Result<String
         let after = &rest[start + "${secret:".len()..];
         let Some(end) = after.find('}') else {
             return Err(RuntimeError::Error {
-                message: format!("unclosed secret template in `{template}`"), span: 0..0 });
+                message: format!("unclosed secret template in `{template}`"),
+                span: 0..0,
+            });
         };
         let name = &after[..end];
         let value = store.get(name).ok_or_else(|| RuntimeError::Error {
-            message: format!("unknown secret `{name}` in template `{template}`"), span: 0..0 })?;
+            message: format!("unknown secret `{name}` in template `{template}`"),
+            span: 0..0,
+        })?;
         out.push_str(value);
         rest = &after[end + 1..];
     }
@@ -67,7 +71,10 @@ pub fn substitute_string_map(
     Ok(())
 }
 
-pub fn substitute_string_vec(values: &mut [String], store: &SecretsStore) -> Result<(), RuntimeError> {
+pub fn substitute_string_vec(
+    values: &mut [String],
+    store: &SecretsStore,
+) -> Result<(), RuntimeError> {
     for value in values.iter_mut() {
         *value = substitute_secrets(value, store)?;
     }

@@ -12,7 +12,9 @@ use crate::probe_bundle::{
     invoke_env_get, invoke_http_get, invoke_json_parse, invoke_read_file, invoke_secret_get,
     invoke_write_file,
 };
-use crate::probe_manifest::{prepare_probe_manifest, read_probe_manifest, validate_manifest, ProbeBinding};
+use crate::probe_manifest::{
+    prepare_probe_manifest, read_probe_manifest, validate_manifest, ProbeBinding,
+};
 use crate::secrets::SecretsStore;
 use crate::value_json::{json_to_value, value_to_json};
 use crate::{RuntimeError, Value};
@@ -38,7 +40,9 @@ pub struct ProbeJsonlEvent {
 
 #[derive(Debug, Clone)]
 enum Handler {
-    Jsonl { path: Option<PathBuf> },
+    Jsonl {
+        path: Option<PathBuf>,
+    },
     Command {
         command: Vec<String>,
         env: HashMap<String, String>,
@@ -68,12 +72,7 @@ pub struct RegistryProbeHost {
 impl RegistryProbeHost {
     pub fn with_defaults() -> Self {
         let mut handlers = HashMap::new();
-        handlers.insert(
-            "log".into(),
-            Handler::Jsonl {
-                path: None,
-            },
-        );
+        handlers.insert("log".into(), Handler::Jsonl { path: None });
         Self {
             handlers,
             mcp_manager: None,
@@ -112,9 +111,11 @@ impl RegistryProbeHost {
     }
 
     fn handler_for(&self, name: &str) -> Option<&Handler> {
-        self.handlers
-            .get(name)
-            .or_else(|| name.rsplit('.').next().and_then(|short| self.handlers.get(short)))
+        self.handlers.get(name).or_else(|| {
+            name.rsplit('.')
+                .next()
+                .and_then(|short| self.handlers.get(short))
+        })
     }
 
     fn resolve_tool_name(probe_name: &str, tool: &Option<String>) -> String {
@@ -133,7 +134,9 @@ impl ProbeHost for RegistryProbeHost {
         let handler = self
             .handler_for(call.name)
             .ok_or(RuntimeError::ProbeNotImplemented {
-                name: call.name.to_string(), span: 0..0 })?
+                name: call.name.to_string(),
+                span: 0..0,
+            })?
             .clone();
 
         match handler {
@@ -142,11 +145,16 @@ impl ProbeHost for RegistryProbeHost {
             }
             Handler::Command { command, env } => invoke_command_probe(call, &command, &env),
             Handler::Mcp { server, tool } => {
-                let manager = self.mcp_manager.as_ref().ok_or_else(|| RuntimeError::Error {
-                    message: format!(
-                        "probe `{}` is configured as MCP but no MCP servers are loaded",
-                        call.name
-                    ), span: 0..0 })?;
+                let manager = self
+                    .mcp_manager
+                    .as_ref()
+                    .ok_or_else(|| RuntimeError::Error {
+                        message: format!(
+                            "probe `{}` is configured as MCP but no MCP servers are loaded",
+                            call.name
+                        ),
+                        span: 0..0,
+                    })?;
                 let tool_name = Self::resolve_tool_name(call.name, &tool);
                 let args = call
                     .args
@@ -177,21 +185,37 @@ impl ProbeHost for RegistryProbeHost {
 
 fn mcp_error_to_runtime(err: McpError) -> RuntimeError {
     match err {
-        McpError::Transport { message } => RuntimeError::McpTransport { message, span: 0..0 },
+        McpError::Transport { message } => RuntimeError::McpTransport {
+            message,
+            span: 0..0,
+        },
         McpError::ToolFailed { tool, message } => RuntimeError::ProbeFailed {
             name: tool,
-            message, span: 0..0 },
-        McpError::Config { message } => RuntimeError::Error { message, span: 0..0 },
+            message,
+            span: 0..0,
+        },
+        McpError::Config { message } => RuntimeError::Error {
+            message,
+            span: 0..0,
+        },
     }
 }
 
 fn mcp_invoke_error(probe_name: &str, err: McpError) -> RuntimeError {
     match err {
-        McpError::Transport { message } => RuntimeError::McpTransport { message, span: 0..0 },
+        McpError::Transport { message } => RuntimeError::McpTransport {
+            message,
+            span: 0..0,
+        },
         McpError::ToolFailed { .. } => RuntimeError::ProbeFailed {
             name: probe_name.to_string(),
-            message: err.to_string(), span: 0..0 },
-        McpError::Config { message } => RuntimeError::Error { message, span: 0..0 },
+            message: err.to_string(),
+            span: 0..0,
+        },
+        McpError::Config { message } => RuntimeError::Error {
+            message,
+            span: 0..0,
+        },
     }
 }
 
@@ -226,7 +250,9 @@ fn invoke_jsonl_log(
     events.push(event.clone());
     let line = serde_json::to_string(&event).map_err(|err| RuntimeError::ProbeFailed {
         name: call.name.to_string(),
-        message: err.to_string(), span: 0..0 })?;
+        message: err.to_string(),
+        span: 0..0,
+    })?;
 
     if let Some(path) = path {
         let mut file = OpenOptions::new()
@@ -235,10 +261,14 @@ fn invoke_jsonl_log(
             .open(path)
             .map_err(|err| RuntimeError::ProbeFailed {
                 name: call.name.to_string(),
-                message: format!("failed to open probe log `{}`: {err}", path.display()), span: 0..0 })?;
+                message: format!("failed to open probe log `{}`: {err}", path.display()),
+                span: 0..0,
+            })?;
         writeln!(file, "{line}").map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!("failed to write probe log: {err}"), span: 0..0 })?;
+            message: format!("failed to write probe log: {err}"),
+            span: 0..0,
+        })?;
     } else {
         eprintln!("{line}");
     }
@@ -269,7 +299,9 @@ fn invoke_command_probe(
     if command.is_empty() {
         return Err(RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: "command probe requires a non-empty command".into(), span: 0..0 });
+            message: "command probe requires a non-empty command".into(),
+            span: 0..0,
+        });
     }
 
     let request = CommandRequest {
@@ -280,9 +312,12 @@ fn invoke_command_probe(
             .map(|(k, v)| (k.clone(), value_to_json(v)))
             .collect(),
     };
-    let request_json = serde_json::to_string(&request).map_err(|err| RuntimeError::ProbeFailed {
-        name: call.name.to_string(),
-        message: err.to_string(), span: 0..0 })?;
+    let request_json =
+        serde_json::to_string(&request).map_err(|err| RuntimeError::ProbeFailed {
+            name: call.name.to_string(),
+            message: err.to_string(),
+            span: 0..0,
+        })?;
 
     let mut child_cmd = Command::new(&command[0]);
     child_cmd
@@ -293,37 +328,44 @@ fn invoke_command_probe(
     if !env.is_empty() {
         child_cmd.envs(env);
     }
-    let mut child = child_cmd
-        .spawn()
-        .map_err(|err| RuntimeError::ProbeFailed {
-            name: call.name.to_string(),
-            message: format!("failed to spawn probe command: {err}"), span: 0..0 })?;
+    let mut child = child_cmd.spawn().map_err(|err| RuntimeError::ProbeFailed {
+        name: call.name.to_string(),
+        message: format!("failed to spawn probe command: {err}"),
+        span: 0..0,
+    })?;
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(request_json.as_bytes())
             .map_err(|err| RuntimeError::ProbeFailed {
                 name: call.name.to_string(),
-                message: format!("failed to write probe request: {err}"), span: 0..0 })?;
+                message: format!("failed to write probe request: {err}"),
+                span: 0..0,
+            })?;
     }
 
-    let output = child.wait_with_output().map_err(|err| RuntimeError::ProbeFailed {
-        name: call.name.to_string(),
-        message: format!("failed to wait for probe command: {err}"), span: 0..0 })?;
+    let output = child
+        .wait_with_output()
+        .map_err(|err| RuntimeError::ProbeFailed {
+            name: call.name.to_string(),
+            message: format!("failed to wait for probe command: {err}"),
+            span: 0..0,
+        })?;
 
     if !output.status.success() {
         return Err(RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!(
-                "probe command exited with status {}",
-                output.status
-            ), span: 0..0 });
+            message: format!("probe command exited with status {}", output.status),
+            span: 0..0,
+        });
     }
 
     let response: CommandResponse =
         serde_json::from_slice(&output.stdout).map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!("invalid probe response JSON: {err}"), span: 0..0 })?;
+            message: format!("invalid probe response JSON: {err}"),
+            span: 0..0,
+        })?;
 
     match response.status.as_str() {
         "ok" => match response.value {
@@ -334,7 +376,9 @@ fn invoke_command_probe(
             name: call.name.to_string(),
             message: response
                 .message
-                .unwrap_or_else(|| "probe command returned error status".into()), span: 0..0 }),
+                .unwrap_or_else(|| "probe command returned error status".into()),
+            span: 0..0,
+        }),
     }
 }
 
@@ -353,5 +397,3 @@ impl From<ProbeBinding> for Handler {
         }
     }
 }
-
-

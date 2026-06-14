@@ -48,14 +48,20 @@ impl NebError for ParseError {
     fn neb_message(&self) -> String {
         match self {
             ParseError::Lex(err) => err.neb_message(),
-            ParseError::Unexpected { expected, found, .. } => {
+            ParseError::Unexpected {
+                expected, found, ..
+            } => {
                 format!("unexpected token: expected {expected}, found {found}")
             }
             ParseError::Eof { .. } => "unexpected end of file".to_string(),
-            ParseError::DeprecatedComparison { canonical, found, .. } => {
+            ParseError::DeprecatedComparison {
+                canonical, found, ..
+            } => {
                 format!("use `{canonical}` instead of `{found}`")
             }
-            ParseError::DeprecatedBraceBlock { canonical, found, .. } => {
+            ParseError::DeprecatedBraceBlock {
+                canonical, found, ..
+            } => {
                 format!("use `{canonical}`-delimited block instead of `{found}`")
             }
         }

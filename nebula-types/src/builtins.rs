@@ -175,12 +175,7 @@ impl Checker {
     }
 
     /// Check that `arg` is a `Str`.
-    fn expect_str(
-        &self,
-        arg: &Spanned<Expr>,
-        scope: &mut Scope,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn expect_str(&self, arg: &Spanned<Expr>, scope: &mut Scope, errors: &mut Vec<TypeError>) {
         let ty = self.check_expr_inner(&arg.node, scope, errors, Some(&Type::Str));
         if ty != Type::Str {
             errors.push(TypeError::Mismatch {
@@ -347,11 +342,7 @@ fn fallback_return(rule: ReturnRule) -> Type {
     }
 }
 
-fn resolve_return(
-    rule: ReturnRule,
-    list_elem: Option<Type>,
-    map_value: Option<Type>,
-) -> Type {
+fn resolve_return(rule: ReturnRule, list_elem: Option<Type>, map_value: Option<Type>) -> Type {
     match rule {
         ReturnRule::FixedInt => Type::Int,
         ReturnRule::FixedVoid => Type::Void,

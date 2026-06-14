@@ -17,7 +17,11 @@ fn run_example(name: &str) -> std::process::Output {
 #[test]
 fn cli_run_hello_prints_greeting() {
     let output = run_example("hello.neb");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "Hello from Nebula"
@@ -27,21 +31,23 @@ fn cli_run_hello_prints_greeting() {
 #[test]
 fn cli_run_push_demo_prints_lengths() {
     let output = run_example("push_demo.neb");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "5\n3"
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "5\n3");
 }
 
 #[test]
 fn cli_run_import_demo_prints_math_results() {
     let output = run_example("import_demo.neb");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "42\n21"
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42\n21");
 }
 
 #[test]
@@ -52,7 +58,11 @@ fn cli_parse_json_exports_ast() {
         .arg(workspace_root().join("examples/hello.neb"))
         .output()
         .expect("spawn nebula parse --json");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     assert!(parsed["program"]["items"].is_array());
@@ -69,7 +79,11 @@ fn cli_parse_json_load_exports_merged_ast() {
         .arg(workspace_root().join("examples/import_demo.neb"))
         .output()
         .expect("spawn nebula parse --json --load");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     assert_eq!(parsed["loaded"], true);
@@ -87,7 +101,11 @@ fn cli_ir_json_exports_lowered_program() {
         .arg(workspace_root().join("examples/hello.neb"))
         .output()
         .expect("spawn nebula ir --json");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     assert!(parsed["ir"]["mission"]["name"].as_str().unwrap() == "main");
@@ -101,7 +119,11 @@ fn cli_check_passes_on_valid_example() {
         .arg(workspace_root().join("examples/fizzbuzz.neb"))
         .output()
         .expect("spawn nebula check");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(String::from_utf8_lossy(&output.stdout).contains("ok:"));
 }
 
@@ -125,7 +147,10 @@ fn cli_check_json_emits_structured_diagnostics_on_failure() {
         serde_json::from_str(stderr.trim()).expect("stderr should be JSON array");
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0]["code"], "NEB-T002");
-    assert!(parsed[0]["message"].as_str().unwrap().contains("type mismatch"));
+    assert!(parsed[0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("type mismatch"));
     assert!(parsed[0]["span"]["start"].is_number());
 }
 
@@ -160,10 +185,15 @@ fn cli_run_json_emits_structured_run_record_on_type_error() {
     let parsed: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("stdout should be run record JSON");
     assert_eq!(parsed["exit"], 1);
-    assert!(parsed["program"].as_str().is_some_and(|p| p.contains("nebula-bad-run-json.neb")));
+    assert!(parsed["program"]
+        .as_str()
+        .is_some_and(|p| p.contains("nebula-bad-run-json.neb")));
     let diagnostics = parsed["diagnostics"].as_array().expect("diagnostics array");
     assert!(diagnostics.iter().any(|diag| diag["code"] == "NEB-T002"));
-    assert!(parsed["probe_events"].as_array().expect("probe_events").is_empty());
+    assert!(parsed["probe_events"]
+        .as_array()
+        .expect("probe_events")
+        .is_empty());
     assert!(parsed["duration_ms"].as_u64().is_some());
 }
 
@@ -175,17 +205,21 @@ fn cli_run_json_emits_structured_run_record_on_success() {
         .arg(workspace_root().join("examples/hello.neb"))
         .output()
         .expect("spawn nebula run --json");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be run record JSON");
     assert_eq!(parsed["exit"], 0);
-    assert!(parsed["diagnostics"].as_array().expect("diagnostics").is_empty());
+    assert!(parsed["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .is_empty());
     assert!(parsed["probe_events"].as_array().is_some());
     assert!(parsed["duration_ms"].as_u64().is_some());
-    assert_eq!(
-        parsed["printed"],
-        serde_json::json!(["Hello from Nebula"])
-    );
+    assert_eq!(parsed["printed"], serde_json::json!(["Hello from Nebula"]));
     assert_eq!(parsed["return_value"], serde_json::Value::Null);
     assert_eq!(parsed["probes_called"], serde_json::json!([]));
 }
@@ -201,12 +235,20 @@ fn cli_probes_list_json_reports_manifest_bindings() {
         .arg(&manifest)
         .output()
         .expect("spawn nebula probes list --json");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     let probes = parsed["probes"].as_array().expect("probes array");
-    assert!(probes.iter().any(|probe| probe["name"] == "notify" && probe["kind"] == "mcp"));
-    assert!(probes.iter().any(|probe| probe["name"] == "log" && probe["kind"] == "jsonl"));
+    assert!(probes
+        .iter()
+        .any(|probe| probe["name"] == "notify" && probe["kind"] == "mcp"));
+    assert!(probes
+        .iter()
+        .any(|probe| probe["name"] == "log" && probe["kind"] == "jsonl"));
     assert!(parsed["mcp_servers"].is_null());
 }
 
@@ -221,7 +263,11 @@ fn cli_probes_list_json_reports_bundle_handlers() {
         .arg(&manifest)
         .output()
         .expect("spawn nebula probes list --json");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     let probes = parsed["probes"].as_array().expect("probes array");
@@ -234,7 +280,9 @@ fn cli_probes_list_json_reports_bundle_handlers() {
         ("secret_get", "secret_get"),
     ] {
         assert!(
-            probes.iter().any(|probe| probe["name"] == name && probe["kind"] == kind),
+            probes
+                .iter()
+                .any(|probe| probe["name"] == name && probe["kind"] == kind),
             "missing bundle probe {name}"
         );
     }
@@ -252,7 +300,11 @@ fn cli_probes_list_mcp_discovers_tools() {
         .arg(&manifest)
         .output()
         .expect("spawn nebula probes list --json --mcp");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     let tools = parsed["mcp_servers"]["local"]["tools"]
@@ -275,10 +327,7 @@ fn cli_run_runbook_deploy_readiness() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "ready"
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "ready");
 }
 
 #[test]
@@ -308,5 +357,8 @@ fn cli_check_fails_on_type_error() {
         .expect("spawn nebula check");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("NEB-T002"), "expected type mismatch in stderr: {stderr}");
+    assert!(
+        stderr.contains("NEB-T002"),
+        "expected type mismatch in stderr: {stderr}"
+    );
 }

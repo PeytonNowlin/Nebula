@@ -5,9 +5,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
 
-use nebula_runtime::{
-    list_probe_manifest, ProbeInvocation, ProbeHost, RegistryProbeHost, Value,
-};
+use nebula_runtime::{list_probe_manifest, ProbeHost, ProbeInvocation, RegistryProbeHost, Value};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -118,7 +116,9 @@ fn http_get_manifest_headers_are_applied() {
             let n = stream.read(&mut buf).expect("read request");
             let request = String::from_utf8_lossy(&buf[..n]);
             assert!(
-                request.to_ascii_lowercase().contains("x-test-token: bearer inline"),
+                request
+                    .to_ascii_lowercase()
+                    .contains("x-test-token: bearer inline"),
                 "request missing auth header: {request}"
             );
             let body = "secret-body";
@@ -126,7 +126,9 @@ fn http_get_manifest_headers_are_applied() {
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
-            stream.write_all(response.as_bytes()).expect("write response");
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
         }
     });
 

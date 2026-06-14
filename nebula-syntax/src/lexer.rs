@@ -203,9 +203,7 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
                 });
             }
             Err(_) => {
-                return Err(LexError {
-                    span: lexer.span(),
-                });
+                return Err(LexError { span: lexer.span() });
             }
         }
     }

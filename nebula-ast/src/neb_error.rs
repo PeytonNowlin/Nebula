@@ -11,9 +11,7 @@ pub trait NebError {
     fn to_diagnostic_json(&self, file: Option<&str>, source: Option<&str>) -> DiagnosticJson {
         DiagnosticJson {
             code: self.neb_code().to_string(),
-            span: self
-                .neb_span()
-                .map(|span| make_span(file, &span, source)),
+            span: self.neb_span().map(|span| make_span(file, &span, source)),
             message: self.neb_message(),
         }
     }

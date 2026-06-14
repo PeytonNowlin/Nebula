@@ -33,8 +33,7 @@ impl Checker {
                     Some(Type::Option(inner)) => Some(inner.as_ref()),
                     _ => None,
                 };
-                let inner_ty =
-                    self.check_expr_inner(&inner.node, scope, errors, inner_expected);
+                let inner_ty = self.check_expr_inner(&inner.node, scope, errors, inner_expected);
                 Type::Option(Box::new(inner_ty))
             }
             Expr::Ident(name) => match scope.get(&name.node) {
@@ -47,7 +46,10 @@ impl Checker {
                     Type::Void
                 }
             },
-            Expr::Unary { op: UnaryOp::Not, operand } => {
+            Expr::Unary {
+                op: UnaryOp::Not,
+                operand,
+            } => {
                 let ty = self.check_expr_inner(&operand.node, scope, errors, None);
                 if ty != Type::Bool {
                     errors.push(TypeError::Mismatch {
@@ -129,7 +131,13 @@ impl Checker {
             Expr::ProbeCall { name, args } => {
                 if let Some(resolved) = self.resolve_probe(&name.node) {
                     if let Some(probe) = self.probes.get(&resolved).cloned() {
-                        return self.check_probe_call(&probe, args, name.span.clone(), scope, errors);
+                        return self.check_probe_call(
+                            &probe,
+                            args,
+                            name.span.clone(),
+                            scope,
+                            errors,
+                        );
                     }
                 }
                 errors.push(TypeError::UndefinedProbe {
@@ -213,7 +221,8 @@ impl Checker {
                 let val_ty =
                     self.check_expr_inner(&entries[0].node.value.node, scope, errors, val_expected);
                 for entry in &entries[1..] {
-                    let k = self.check_expr_inner(&entry.node.key.node, scope, errors, Some(&key_ty));
+                    let k =
+                        self.check_expr_inner(&entry.node.key.node, scope, errors, Some(&key_ty));
                     if !types_equal(&key_ty, &k) {
                         errors.push(TypeError::Mismatch {
                             expected: key_ty.display(),

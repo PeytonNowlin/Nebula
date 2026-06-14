@@ -99,7 +99,9 @@ impl nebula_ast::NebError for TypeError {
             TypeError::UndefinedIdent { name, .. } => {
                 format!("undefined identifier `{name}`")
             }
-            TypeError::Mismatch { expected, found, .. } => {
+            TypeError::Mismatch {
+                expected, found, ..
+            } => {
                 format!("type mismatch: expected {expected}, found {found}")
             }
             TypeError::ImmutableAssign { name, .. } => {
@@ -110,9 +112,7 @@ impl nebula_ast::NebError for TypeError {
             TypeError::UndefinedProbe { name, .. } => format!("undefined probe `{name}`"),
             TypeError::MissingMain { .. } => "missing mission entry point `main`".to_string(),
             TypeError::UnknownField {
-                struct_name,
-                field,
-                ..
+                struct_name, field, ..
             } => format!("unknown field `{field}` on struct `{struct_name}`"),
             TypeError::DuplicateSymbol { kind, name, .. } => {
                 format!("duplicate {kind} `{name}`")

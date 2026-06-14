@@ -10,9 +10,7 @@ pub fn value_to_json(value: &Value) -> serde_json::Value {
         Value::Str(s) => serde_json::Value::from(s.clone()),
         Value::None => serde_json::Value::Null,
         Value::Some(inner) => serde_json::json!({ "Some": value_to_json(inner) }),
-        Value::List(items) => {
-            serde_json::Value::Array(items.iter().map(value_to_json).collect())
-        }
+        Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
         Value::Map(map) => {
             let obj = map
                 .iter()
@@ -38,13 +36,18 @@ pub fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
                 Value::Float(f)
             } else {
                 return Err(RuntimeError::Error {
-                    message: "unsupported JSON number in value".into(), span: 0..0 });
+                    message: "unsupported JSON number in value".into(),
+                    span: 0..0,
+                });
             }
         }
         serde_json::Value::String(s) => Value::Str(s),
-        serde_json::Value::Array(items) => {
-            Value::List(items.into_iter().map(json_to_value).collect::<Result<_, _>>()?)
-        }
+        serde_json::Value::Array(items) => Value::List(
+            items
+                .into_iter()
+                .map(json_to_value)
+                .collect::<Result<_, _>>()?,
+        ),
         serde_json::Value::Object(map) => Value::Map(
             map.into_iter()
                 .map(|(k, v)| json_to_value(v).map(|val| (k, val)))

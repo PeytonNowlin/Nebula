@@ -136,10 +136,7 @@ fn parse_manifest(source: &str) -> Result<BuiltinManifest, String> {
     Ok(BuiltinManifest { builtins, by_name })
 }
 
-fn parse_checker(
-    checker: Option<&str>,
-    params: &[RawParam],
-) -> Result<BuiltinCheckerKind, String> {
+fn parse_checker(checker: Option<&str>, params: &[RawParam]) -> Result<BuiltinCheckerKind, String> {
     match checker {
         None if !params.is_empty() => Ok(BuiltinCheckerKind::Simple),
         None => Err("non-simple builtin requires `checker`".into()),
@@ -197,10 +194,33 @@ mod tests {
         let names: Vec<_> = manifest().names().collect();
         assert_eq!(names.len(), 27);
         for name in [
-            "print", "len", "push", "at", "get", "has", "insert", "str_to_int", "int_to_str",
-            "str_to_float", "float_to_str", "int_to_float", "float_to_int", "substr", "contains",
-            "index_of", "starts_with", "ends_with", "to_upper", "to_lower", "trim", "replace",
-            "split", "join", "abs", "min", "max",
+            "print",
+            "len",
+            "push",
+            "at",
+            "get",
+            "has",
+            "insert",
+            "str_to_int",
+            "int_to_str",
+            "str_to_float",
+            "float_to_str",
+            "int_to_float",
+            "float_to_int",
+            "substr",
+            "contains",
+            "index_of",
+            "starts_with",
+            "ends_with",
+            "to_upper",
+            "to_lower",
+            "trim",
+            "replace",
+            "split",
+            "join",
+            "abs",
+            "min",
+            "max",
         ] {
             assert!(manifest().is_builtin(name), "missing builtin {name}");
         }

@@ -8,10 +8,7 @@ use nebula_ir::{IrExpr, IrExprKind, IrFunction, IrProgram, IrStmt};
 use nebula_load::LoadedProgram;
 
 use crate::error::EmitError;
-use crate::layout::{
-    common_base, python_import_from, relative_py_path,
-    sorted_modules,
-};
+use crate::layout::{common_base, python_import_from, relative_py_path, sorted_modules};
 
 pub struct EmitOptions {
     pub out_dir: PathBuf,
@@ -92,8 +89,7 @@ pub fn emit_workspace(
 }
 
 fn copy_runtime_shim(out_dir: &Path) -> Result<(), EmitError> {
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../python/nebula_runtime");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../python/nebula_runtime");
     let dest = out_dir.join("nebula_runtime");
     copy_dir_recursive(&source, &dest).map_err(|err| EmitError::RuntimeCopy {
         message: err.to_string(),
@@ -208,10 +204,7 @@ impl<'a> ModuleEmitter<'a> {
             .sectors
             .keys()
             .filter(|name| {
-                self.loaded
-                    .symbol_sources
-                    .get(*name)
-                    .map(PathBuf::as_path)
+                self.loaded.symbol_sources.get(*name).map(PathBuf::as_path)
                     == Some(self.module_path)
             })
             .cloned()
@@ -359,7 +352,10 @@ impl<'a> ModuleEmitter<'a> {
                 then_body,
                 else_body,
             } => {
-                self.write_line(&format!("if nebula_truthy({}):", self.emit_expr(condition)?));
+                self.write_line(&format!(
+                    "if nebula_truthy({}):",
+                    self.emit_expr(condition)?
+                ));
                 self.indent += 1;
                 for s in then_body {
                     self.write_stmt(s)?;
@@ -395,7 +391,11 @@ impl<'a> ModuleEmitter<'a> {
                 let resolved = self.resolve_probe_name(name);
                 let mut pairs = Vec::new();
                 for (key, value) in args {
-                    pairs.push(format!("{}: {}", python_string(key), self.emit_expr(value)?));
+                    pairs.push(format!(
+                        "{}: {}",
+                        python_string(key),
+                        self.emit_expr(value)?
+                    ));
                 }
                 self.write_line(&format!(
                     "PROBE_HOST.call({}, {{{}}})",
@@ -516,7 +516,11 @@ impl<'a> ModuleEmitter<'a> {
                 let resolved = self.resolve_probe_name(name);
                 let mut pairs = Vec::new();
                 for (key, value) in args {
-                    pairs.push(format!("{}: {}", python_string(key), self.emit_expr(value)?));
+                    pairs.push(format!(
+                        "{}: {}",
+                        python_string(key),
+                        self.emit_expr(value)?
+                    ));
                 }
                 format!(
                     "PROBE_HOST.call({}, {{{}}})",
@@ -568,8 +572,6 @@ fn emit_module(
 ) -> Result<String, EmitError> {
     ModuleEmitter::emit_module(loaded, ir, module_path, is_entry, base, opts)
 }
-
-
 
 /// Render a float literal so Python parses it as a `float`, never an `int`.
 /// `7.0_f64.to_string()` is `"7"`, which would become a Python int and corrupt

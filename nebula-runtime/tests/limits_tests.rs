@@ -102,6 +102,7 @@ mission main {
     let typed = typecheck(&program).expect("typecheck");
     let ir = lower(&typed).expect("lower");
     let mut runtime = Runtime::new(&ir);
-    runtime.run(&ir).expect("default runtime should be unlimited");
+    runtime
+        .run(&ir)
+        .expect("default runtime should be unlimited");
 }
-

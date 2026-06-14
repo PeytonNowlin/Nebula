@@ -48,8 +48,9 @@ impl StdioMcpSession {
     }
 
     fn write_request(&self, request: &JsonRpcRequest) -> Result<(), McpError> {
-        let line = serde_json::to_string(request)
-            .map_err(|err| McpError::transport(format!("failed to encode JSON-RPC request: {err}")))?;
+        let line = serde_json::to_string(request).map_err(|err| {
+            McpError::transport(format!("failed to encode JSON-RPC request: {err}"))
+        })?;
         self.write_line(&line)
     }
 
@@ -61,31 +62,37 @@ impl StdioMcpSession {
     }
 
     fn write_line(&self, line: &str) -> Result<(), McpError> {
-        let mut child = self.child.lock().map_err(|_| {
-            McpError::transport("MCP stdio session lock poisoned")
-        })?;
-        let stdin = child.stdin.as_mut().ok_or_else(|| {
-            McpError::transport("MCP server stdin unavailable")
-        })?;
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| McpError::transport("MCP stdio session lock poisoned"))?;
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| McpError::transport("MCP server stdin unavailable"))?;
         stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
-            .map_err(|err| McpError::transport(format!("failed to write to MCP server stdin: {err}")))
+            .map_err(|err| {
+                McpError::transport(format!("failed to write to MCP server stdin: {err}"))
+            })
     }
 
     fn read_response(&self, expected_id: u64) -> Result<JsonRpcResponse, McpError> {
-        let mut child = self.child.lock().map_err(|_| {
-            McpError::transport("MCP stdio session lock poisoned")
-        })?;
-        let stdout = child.stdout.as_mut().ok_or_else(|| {
-            McpError::transport("MCP server stdout unavailable")
-        })?;
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| McpError::transport("MCP stdio session lock poisoned"))?;
+        let stdout = child
+            .stdout
+            .as_mut()
+            .ok_or_else(|| McpError::transport("MCP server stdout unavailable"))?;
         let mut reader = BufReader::new(stdout);
         loop {
             let mut line = String::new();
-            reader
-                .read_line(&mut line)
-                .map_err(|err| McpError::transport(format!("failed to read MCP server stdout: {err}")))?;
+            reader.read_line(&mut line).map_err(|err| {
+                McpError::transport(format!("failed to read MCP server stdout: {err}"))
+            })?;
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -108,9 +115,10 @@ impl StdioMcpSession {
     }
 
     fn ensure_initialized(&self) -> Result<(), McpError> {
-        let mut initialized = self.initialized.lock().map_err(|_| {
-            McpError::transport("MCP stdio session lock poisoned")
-        })?;
+        let mut initialized = self
+            .initialized
+            .lock()
+            .map_err(|_| McpError::transport("MCP stdio session lock poisoned"))?;
         if *initialized {
             return Ok(());
         }

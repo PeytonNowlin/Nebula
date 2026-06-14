@@ -18,9 +18,11 @@ fn load_workspace_collects_entry_and_imported_modules() {
     let loaded = load_workspace(&entry, program).expect("load workspace");
 
     assert_eq!(loaded.modules.len(), 2);
-    assert!(loaded.merged.items.iter().any(|item| {
-        matches!(&item.node, nebula_ast::TopLevel::Sector(_))
-    }));
+    assert!(loaded
+        .merged
+        .items
+        .iter()
+        .any(|item| { matches!(&item.node, nebula_ast::TopLevel::Sector(_)) }));
     assert!(loaded
         .merged
         .items
@@ -45,7 +47,10 @@ fn load_workspace_collects_entry_and_imported_modules() {
     }));
 
     assert_eq!(
-        loaded.symbol_sources.get("math.double").map(PathBuf::as_path),
+        loaded
+            .symbol_sources
+            .get("math.double")
+            .map(PathBuf::as_path),
         Some(math_canonical.as_path())
     );
     assert_eq!(
@@ -53,6 +58,9 @@ fn load_workspace_collects_entry_and_imported_modules() {
         Some(math_canonical.as_path())
     );
 
-    let entry_imports = loaded.import_graph.get(&entry_canonical).expect("entry imports");
+    let entry_imports = loaded
+        .import_graph
+        .get(&entry_canonical)
+        .expect("entry imports");
     assert!(entry_imports.contains(&math_canonical));
 }

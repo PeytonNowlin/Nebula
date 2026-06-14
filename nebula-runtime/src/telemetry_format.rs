@@ -46,7 +46,10 @@ pub fn binding_value(value: &Value) -> JsonValue {
     value_to_json(value)
 }
 
-pub fn probe_args(args: &HashMap<String, Value>, redact_secret_names: bool) -> HashMap<String, JsonValue> {
+pub fn probe_args(
+    args: &HashMap<String, Value>,
+    redact_secret_names: bool,
+) -> HashMap<String, JsonValue> {
     args.iter()
         .map(|(key, value)| {
             let json = if redact_secret_names {

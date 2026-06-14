@@ -30,12 +30,7 @@ impl Checker {
         }
     }
 
-    fn register_function(
-        &mut self,
-        info: FnInfo,
-        span: Span,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn register_function(&mut self, info: FnInfo, span: Span, errors: &mut Vec<TypeError>) {
         if self.functions.contains_key(&info.qualified_name) {
             errors.push(TypeError::DuplicateSymbol {
                 kind: "function".into(),
@@ -47,12 +42,7 @@ impl Checker {
         self.functions.insert(info.qualified_name.clone(), info);
     }
 
-    fn register_probe(
-        &mut self,
-        info: ProbeInfo,
-        span: Span,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn register_probe(&mut self, info: ProbeInfo, span: Span, errors: &mut Vec<TypeError>) {
         if self.probes.contains_key(&info.qualified_name) {
             errors.push(TypeError::DuplicateSymbol {
                 kind: "probe".into(),
@@ -64,12 +54,7 @@ impl Checker {
         self.probes.insert(info.qualified_name.clone(), info);
     }
 
-    fn register_struct(
-        &mut self,
-        info: StructInfo,
-        span: Span,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn register_struct(&mut self, info: StructInfo, span: Span, errors: &mut Vec<TypeError>) {
         if self.structs.contains_key(&info.qualified_name) {
             errors.push(TypeError::DuplicateSymbol {
                 kind: "struct".into(),
@@ -229,12 +214,7 @@ impl Checker {
         );
     }
 
-    fn collect_probe(
-        &mut self,
-        p: &ProbeDecl,
-        sector: Option<&str>,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn collect_probe(&mut self, p: &ProbeDecl, sector: Option<&str>, errors: &mut Vec<TypeError>) {
         let name = p.name.node.clone();
         let qualified_name = sector
             .map(|s| qualify(s, &name))
@@ -326,10 +306,13 @@ impl Checker {
                 scope.define(name.node.clone(), resolved_ty, *mutable);
             }
             Stmt::Set { name, value } => {
-                let binding = scope.get(&name.node).map(|(ty, mutable)| (ty.clone(), *mutable));
+                let binding = scope
+                    .get(&name.node)
+                    .map(|(ty, mutable)| (ty.clone(), *mutable));
                 match binding {
                     Some((bty, true)) => {
-                        let value_ty = self.check_expr_inner(&value.node, scope, errors, Some(&bty));
+                        let value_ty =
+                            self.check_expr_inner(&value.node, scope, errors, Some(&bty));
                         if !types_equal(&bty, &value_ty) {
                             errors.push(TypeError::Mismatch {
                                 expected: bty.display(),

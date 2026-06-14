@@ -77,8 +77,7 @@ fn load_schema(name: &str) -> Validator {
 }
 
 fn test_temp(stem: &str, suffix: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join(format!("nebula-runbook-{stem}-{suffix}.jsonl"))
+    std::env::temp_dir().join(format!("nebula-runbook-{stem}-{suffix}.jsonl"))
 }
 
 fn write_runbook_manifest(stem: &str, probe_log: &PathBuf, mock_mcp: &PathBuf) -> PathBuf {
@@ -152,7 +151,10 @@ fn runbook_happy_path_records_telemetry_and_probe_events() {
     let _ = fs::remove_file(&probe_log);
     let _ = fs::remove_file(&telemetry_log);
 
-    std::env::set_var("NEBULA_RUNBOOK_HEALTH_LOG", health_log.to_string_lossy().as_ref());
+    std::env::set_var(
+        "NEBULA_RUNBOOK_HEALTH_LOG",
+        health_log.to_string_lossy().as_ref(),
+    );
 
     let mock_mcp = workspace_root().join("scripts/mcp_mock_stdio.py");
     let manifest_path = write_runbook_manifest("happy", &probe_log, &mock_mcp);
@@ -180,16 +182,33 @@ fn runbook_happy_path_records_telemetry_and_probe_events() {
         "expected telemetry for let/set/probe steps, got {}",
         telemetry_lines.len()
     );
-    let first_set: JsonValue =
-        serde_json::from_str(telemetry_lines.iter().find(|line| line.contains("\"set\"")).expect("set line"))
-            .expect("parse set telemetry");
+    let first_set: JsonValue = serde_json::from_str(
+        telemetry_lines
+            .iter()
+            .find(|line| line.contains("\"set\""))
+            .expect("set line"),
+    )
+    .expect("parse set telemetry");
     assert_eq!(first_set["detail"], "attempts");
-    assert!(first_set.get("value").is_some(), "set telemetry should include value");
-    let first_probe: JsonValue =
-        serde_json::from_str(telemetry_lines.iter().find(|line| line.contains("\"probe\"")).expect("probe line"))
-            .expect("parse probe telemetry");
-    assert!(first_probe.get("args").is_some(), "probe telemetry should include args");
-    assert!(first_probe.get("result").is_some(), "probe telemetry should include result");
+    assert!(
+        first_set.get("value").is_some(),
+        "set telemetry should include value"
+    );
+    let first_probe: JsonValue = serde_json::from_str(
+        telemetry_lines
+            .iter()
+            .find(|line| line.contains("\"probe\""))
+            .expect("probe line"),
+    )
+    .expect("parse probe telemetry");
+    assert!(
+        first_probe.get("args").is_some(),
+        "probe telemetry should include args"
+    );
+    assert!(
+        first_probe.get("result").is_some(),
+        "probe telemetry should include result"
+    );
 
     let probe_source = fs::read_to_string(&probe_log).expect("read probe log");
     let probe_lines: Vec<_> = probe_source
@@ -276,5 +295,9 @@ mission main {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .collect();
-    assert_eq!(probe_lines.len(), 3, "expected 3 jsonl log calls before failure notify");
+    assert_eq!(
+        probe_lines.len(),
+        3,
+        "expected 3 jsonl log calls before failure notify"
+    );
 }

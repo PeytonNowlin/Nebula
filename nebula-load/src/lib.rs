@@ -35,7 +35,11 @@ pub enum LoadError {
 
     #[error("NEB-L005 [load_error] failed to read `{path}`: {message}")]
     #[diagnostic(code(nebula::import_read_error))]
-    Read { path: PathBuf, message: String, span: Span },
+    Read {
+        path: PathBuf,
+        message: String,
+        span: Span,
+    },
 
     #[error("NEB-L006 [load_error] failed to parse `{path}`")]
     #[diagnostic(code(nebula::import_parse_error))]
@@ -77,7 +81,10 @@ impl nebula_ast::NebError for LoadError {
                 new.display()
             ),
             LoadError::LibraryHasMission { path, .. } => {
-                format!("imported file `{}` must not define a mission", path.display())
+                format!(
+                    "imported file `{}` must not define a mission",
+                    path.display()
+                )
             }
             LoadError::Read { path, message, .. } => {
                 format!("failed to read `{}`: {message}", path.display())
@@ -104,13 +111,16 @@ impl LoadError {
         source: Option<&str>,
         file: Option<&str>,
     ) -> Vec<DiagnosticJson> {
-        if let LoadError::Parse { path, source: parse_err, .. } = self {
+        if let LoadError::Parse {
+            path,
+            source: parse_err,
+            ..
+        } = self
+        {
             let imported_source = fs::read_to_string(path).ok();
             let imported_file = path.display().to_string();
-            vec![parse_err.to_diagnostic_json(
-                Some(imported_file.as_str()),
-                imported_source.as_deref(),
-            )]
+            vec![parse_err
+                .to_diagnostic_json(Some(imported_file.as_str()), imported_source.as_deref())]
         } else {
             vec![self.to_diagnostic_json(file, source)]
         }
@@ -254,11 +264,13 @@ impl Loader {
     }
 
     fn load(mut self, program: Program) -> Result<LoadedProgram, LoadError> {
-        let entry_canonical = fs::canonicalize(&self.entry_path).map_err(|_| LoadError::NotFound {
-            path: self.entry_path.clone(),
-            span: 0..0,
-        })?;
-        self.modules.insert(entry_canonical.clone(), program.clone());
+        let entry_canonical =
+            fs::canonicalize(&self.entry_path).map_err(|_| LoadError::NotFound {
+                path: self.entry_path.clone(),
+                span: 0..0,
+            })?;
+        self.modules
+            .insert(entry_canonical.clone(), program.clone());
 
         let entry_dir = self
             .entry_path
@@ -286,8 +298,7 @@ impl Loader {
         for item in &entry_items {
             match &item.node {
                 TopLevel::Sector(sector) => {
-                    self.registry
-                        .register_sector(sector, &entry_canonical)?;
+                    self.registry.register_sector(sector, &entry_canonical)?;
                 }
                 TopLevel::Mission(mission) => {
                     for mitem in &mission.node.items {
@@ -349,7 +360,10 @@ impl Loader {
         })?;
         self.modules.insert(canonical.clone(), program.clone());
 
-        let module_dir = canonical.parent().map(Path::to_path_buf).unwrap_or_default();
+        let module_dir = canonical
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
 
         let mut imports = Vec::new();
         let mut sectors = Vec::new();

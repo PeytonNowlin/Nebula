@@ -15,21 +15,21 @@ use std::path::Path;
 use std::time::Instant;
 
 use miette::Diagnostic;
+use nebula_ast::Span;
 use nebula_ast::{BinaryOp, UnaryOp};
 use nebula_builtins::is_builtin;
-use nebula_ast::Span;
 use nebula_ir::{IrExpr, IrExprKind, IrProgram, IrStmt};
 use thiserror::Error;
 
 pub use builtins::missing_runtime_handlers;
 pub use limits::ResourceLimits;
-pub use telemetry_format::ProbeCallRecord;
 pub use probe::{ProbeHost, ProbeInvocation, ProbeJsonlEvent, RegistryProbeHost};
 pub use probe_manifest::{
     list_probe_manifest, prepare_probe_manifest, read_probe_manifest, validate_manifest,
     DeclaredProbe, McpServerReport, ProbeBinding, ProbeListReport, ProbeManifest,
 };
 pub use secrets::{resolve_secrets, SecretBinding, SecretsStore};
+pub use telemetry_format::ProbeCallRecord;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -83,11 +83,7 @@ pub enum RuntimeError {
 
     #[error("NEB-R005 [runtime_error] list index {index} out of bounds (len {len})")]
     #[diagnostic(code(nebula::index_out_of_bounds))]
-    IndexOutOfBounds {
-        index: i64,
-        len: usize,
-        span: Span,
-    },
+    IndexOutOfBounds { index: i64, len: usize, span: Span },
 
     #[error("NEB-R006 [runtime_error] key `{key}` not found in map")]
     #[diagnostic(code(nebula::key_not_found))]
@@ -123,7 +119,11 @@ impl RuntimeError {
             Self::Error { message, .. } => Self::Error { message, span },
             Self::UndefinedProbe { name, .. } => Self::UndefinedProbe { name, span },
             Self::ProbeNotImplemented { name, .. } => Self::ProbeNotImplemented { name, span },
-            Self::ProbeFailed { name, message, .. } => Self::ProbeFailed { name, message, span },
+            Self::ProbeFailed { name, message, .. } => Self::ProbeFailed {
+                name,
+                message,
+                span,
+            },
             Self::McpTransport { message, .. } => Self::McpTransport { message, span },
             Self::ExecutionTimeout { limit_ms, .. } => Self::ExecutionTimeout { limit_ms, span },
             Self::MemoryLimitExceeded {
@@ -201,9 +201,7 @@ impl nebula_ast::NebError for RuntimeError {
                 limit_bytes,
                 used_bytes,
                 ..
-            } => format!(
-                "memory limit of {limit_bytes} bytes exceeded (used {used_bytes} bytes)"
-            ),
+            } => format!("memory limit of {limit_bytes} bytes exceeded (used {used_bytes} bytes)"),
         }
     }
 
@@ -434,10 +432,15 @@ impl Runtime {
                 let inner = self.eval_expr(inner)?;
                 self.finish_value(Value::Some(Box::new(inner)))
             }
-            IrExprKind::Var(name) => self.env.get(name).cloned().ok_or(RuntimeError::UndefinedVar {
-                name: name.clone(),
-                span: expr.span.clone(),
-            }),
+            IrExprKind::Var(name) => {
+                self.env
+                    .get(name)
+                    .cloned()
+                    .ok_or(RuntimeError::UndefinedVar {
+                        name: name.clone(),
+                        span: expr.span.clone(),
+                    })
+            }
             IrExprKind::Unary { op, operand } => {
                 let v = self.eval_expr(operand)?;
                 match op {
@@ -455,9 +458,10 @@ impl Runtime {
                 }
 
                 let resolved = self.resolve_function(name);
-                let func = self.functions.get(&resolved).cloned().ok_or_else(|| {
-                    self.runtime_error(format!("undefined function `{name}`"))
-                })?;
+                let func =
+                    self.functions.get(&resolved).cloned().ok_or_else(|| {
+                        self.runtime_error(format!("undefined function `{name}`"))
+                    })?;
 
                 if func.params.len() != args.len() {
                     return Err(self.runtime_error(format!("wrong argument count for `{name}`")));
@@ -514,9 +518,10 @@ impl Runtime {
             IrExprKind::FieldAccess { object, field } => {
                 let val = self.eval_expr(object)?;
                 match val {
-                    Value::Struct { fields, .. } => fields.get(field).cloned().ok_or_else(|| {
-                        self.runtime_error(format!("unknown field `{field}`"))
-                    }),
+                    Value::Struct { fields, .. } => fields
+                        .get(field)
+                        .cloned()
+                        .ok_or_else(|| self.runtime_error(format!("unknown field `{field}`"))),
                     _ => Err(self.runtime_error("field access on non-struct")),
                 }
             }
@@ -553,12 +558,9 @@ impl Runtime {
                 args: evaluated.clone(),
             })
             .map_err(|err| err.with_diagnostic_span(span.clone()))?;
-        self.probes_called
-            .push(telemetry_format::probe_call_record(
-                &resolved,
-                &evaluated,
-                &value,
-            ));
+        self.probes_called.push(telemetry_format::probe_call_record(
+            &resolved, &evaluated, &value,
+        ));
         self.log_telemetry_probe(&resolved, &evaluated, &value);
         self.check_timeout()?;
         Ok(value)
@@ -636,13 +638,14 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, Ru
             // Integer arithmetic is checked: overflow is a deterministic error
             // (NEB-R007), never a silent wrap, so the interpreter and the
             // arbitrary-precision Python backend cannot diverge.
-            (Value::Int(a), Value::Int(b)) => a
-                .checked_add(b)
-                .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow {
-                    op: "plus".into(),
-                    span: span.clone(),
-                }),
+            (Value::Int(a), Value::Int(b)) => {
+                a.checked_add(b)
+                    .map(Value::Int)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        op: "plus".into(),
+                        span: span.clone(),
+                    })
+            }
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Str(mut a), Value::Str(b)) => {
                 a.push_str(&b);
@@ -654,13 +657,14 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, Ru
             }),
         },
         BinaryOp::Minus => match (l, r) {
-            (Value::Int(a), Value::Int(b)) => a
-                .checked_sub(b)
-                .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow {
-                    op: "minus".into(),
-                    span: span.clone(),
-                }),
+            (Value::Int(a), Value::Int(b)) => {
+                a.checked_sub(b)
+                    .map(Value::Int)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        op: "minus".into(),
+                        span: span.clone(),
+                    })
+            }
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid minus operands".into(),
@@ -668,13 +672,14 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, Ru
             }),
         },
         BinaryOp::Times => match (l, r) {
-            (Value::Int(a), Value::Int(b)) => a
-                .checked_mul(b)
-                .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow {
-                    op: "times".into(),
-                    span: span.clone(),
-                }),
+            (Value::Int(a), Value::Int(b)) => {
+                a.checked_mul(b)
+                    .map(Value::Int)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        op: "times".into(),
+                        span: span.clone(),
+                    })
+            }
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid times operands".into(),
@@ -682,18 +687,23 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, Ru
             }),
         },
         BinaryOp::Div => match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
+            (Value::Int(_), Value::Int(0)) => {
+                Err(RuntimeError::DivideByZero { span: span.clone() })
+            }
             // Integer div truncates toward zero (C-style); the Python backend
             // mirrors this in `nebula_div`. `checked_div` also traps the lone
             // overflowing case, i64::MIN / -1.
-            (Value::Int(a), Value::Int(b)) => a
-                .checked_div(b)
-                .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow {
-                    op: "div".into(),
-                    span: span.clone(),
-                }),
-            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
+            (Value::Int(a), Value::Int(b)) => {
+                a.checked_div(b)
+                    .map(Value::Int)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        op: "div".into(),
+                        span: span.clone(),
+                    })
+            }
+            (Value::Float(_), Value::Float(0.0)) => {
+                Err(RuntimeError::DivideByZero { span: span.clone() })
+            }
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid div operands".into(),
@@ -701,14 +711,17 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, Ru
             }),
         },
         BinaryOp::Mod => match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
-            (Value::Int(a), Value::Int(b)) => a
-                .checked_rem(b)
-                .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow {
-                    op: "mod".into(),
-                    span: span.clone(),
-                }),
+            (Value::Int(_), Value::Int(0)) => {
+                Err(RuntimeError::DivideByZero { span: span.clone() })
+            }
+            (Value::Int(a), Value::Int(b)) => {
+                a.checked_rem(b)
+                    .map(Value::Int)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        op: "mod".into(),
+                        span: span.clone(),
+                    })
+            }
             (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero { span }),
             // f64 `%` keeps the sign of the dividend, matching Python math.fmod.
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),

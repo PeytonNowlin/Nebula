@@ -20,7 +20,8 @@ fn run_with_telemetry(src: &str) -> (Vec<JsonValue>, Vec<String>) {
     ));
     let _ = fs::remove_file(&telemetry_path);
 
-    let mut runtime = Runtime::new(&ir).with_telemetry(telemetry_path.to_string_lossy().into_owned());
+    let mut runtime =
+        Runtime::new(&ir).with_telemetry(telemetry_path.to_string_lossy().into_owned());
     runtime.run(&ir).expect("run");
 
     let source = fs::read_to_string(&telemetry_path).expect("read telemetry");

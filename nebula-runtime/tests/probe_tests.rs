@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::thread;
 
 use nebula_ir::lower;
-use nebula_runtime::{ProbeInvocation, ProbeHost, RegistryProbeHost, Runtime, Value};
+use nebula_runtime::{ProbeHost, ProbeInvocation, RegistryProbeHost, Runtime, Value};
 use nebula_syntax::parse;
 use nebula_types::typecheck;
 
@@ -152,7 +152,8 @@ mission main {
 fn load_bundle_host() -> RegistryProbeHost {
     let manifest = workspace_root().join("probes/bundle.json");
     let mut host = RegistryProbeHost::with_defaults();
-    host.load_manifest(&manifest, None).expect("load bundle manifest");
+    host.load_manifest(&manifest, None)
+        .expect("load bundle manifest");
     host
 }
 
@@ -177,10 +178,7 @@ fn bundle_read_file_returns_content() {
     let value = host
         .invoke(&ProbeInvocation {
             name: "read_file",
-            args: HashMap::from([(
-                "path".into(),
-                Value::Str(file.display().to_string()),
-            )]),
+            args: HashMap::from([("path".into(), Value::Str(file.display().to_string()))]),
         })
         .expect("read_file");
     assert!(matches!(value, Value::Str(content) if content == "hello bundle"));

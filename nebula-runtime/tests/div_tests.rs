@@ -21,8 +21,14 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
-    assert!(err.contains("division by zero"), "expected clear message, got: {err}");
+    assert!(
+        err.contains("NEB-R004"),
+        "expected divide-by-zero code, got: {err}"
+    );
+    assert!(
+        err.contains("division by zero"),
+        "expected clear message, got: {err}"
+    );
 }
 
 #[test]
@@ -35,8 +41,14 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
-    assert!(err.contains("division by zero"), "expected clear message, got: {err}");
+    assert!(
+        err.contains("NEB-R004"),
+        "expected divide-by-zero code, got: {err}"
+    );
+    assert!(
+        err.contains("division by zero"),
+        "expected clear message, got: {err}"
+    );
 }
 
 #[test]
@@ -49,7 +61,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
+    assert!(
+        err.contains("NEB-R004"),
+        "expected divide-by-zero code, got: {err}"
+    );
 }
 
 #[test]
@@ -62,7 +77,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
+    assert!(
+        err.contains("NEB-R004"),
+        "expected divide-by-zero code, got: {err}"
+    );
 }
 
 #[test]
@@ -75,7 +93,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R005"), "expected index-out-of-bounds code, got: {err}");
+    assert!(
+        err.contains("NEB-R005"),
+        "expected index-out-of-bounds code, got: {err}"
+    );
 }
 
 #[test]
@@ -88,7 +109,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R005"), "expected index-out-of-bounds code, got: {err}");
+    assert!(
+        err.contains("NEB-R005"),
+        "expected index-out-of-bounds code, got: {err}"
+    );
 }
 
 #[test]
@@ -101,7 +125,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R007"), "expected integer-overflow code, got: {err}");
+    assert!(
+        err.contains("NEB-R007"),
+        "expected integer-overflow code, got: {err}"
+    );
 }
 
 #[test]
@@ -114,7 +141,10 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R007"), "expected integer-overflow code, got: {err}");
+    assert!(
+        err.contains("NEB-R007"),
+        "expected integer-overflow code, got: {err}"
+    );
 }
 
 #[test]
@@ -127,5 +157,8 @@ mission main {
 }
 "#,
     );
-    assert!(err.contains("NEB-R006"), "expected key-not-found code, got: {err}");
+    assert!(
+        err.contains("NEB-R006"),
+        "expected key-not-found code, got: {err}"
+    );
 }

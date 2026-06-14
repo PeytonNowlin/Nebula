@@ -1,5 +1,7 @@
 # Nebula
 
+[![CI](https://github.com/PeytonNowlin/Nebula/actions/workflows/ci.yml/badge.svg)](https://github.com/PeytonNowlin/Nebula/actions/workflows/ci.yml)
+
 **A small, statically typed language built for AI agent authors.**
 
 Nebula trades symbolic brevity for machine legibility: operators are keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain speaks JSON — structured diagnostics, AST export, IR export, and run records with stable `NEB-*` error codes.
