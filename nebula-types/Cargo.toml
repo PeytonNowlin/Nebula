@@ -1,0 +1,13 @@
+[package]
+name = "nebula-types"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+miette.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+nebula-syntax = { path = "../nebula-syntax" }
+insta.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "nebula-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+nebula-ir = { path = "../nebula-ir" }
+miette.workspace = true
+thiserror.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+nebula-syntax = { path = "../nebula-syntax" }
+nebula-types = { path = "../nebula-types" }

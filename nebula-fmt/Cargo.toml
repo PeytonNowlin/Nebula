@@ -1,0 +1,11 @@
+[package]
+name = "nebula-fmt"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+nebula-syntax = { path = "../nebula-syntax" }
+
+[dev-dependencies]
+insta.workspace = true
