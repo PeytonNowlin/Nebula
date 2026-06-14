@@ -2,6 +2,17 @@
 
 [![CI](https://github.com/PeytonNowlin/Nebula/actions/workflows/ci.yml/badge.svg)](https://github.com/PeytonNowlin/Nebula/actions/workflows/ci.yml)
 
+[![programming-language](https://img.shields.io/badge/programming--language-24292f?style=flat-square)](https://github.com/topics/programming-language)
+[![domain-specific-language](https://img.shields.io/badge/domain--specific--language-24292f?style=flat-square)](https://github.com/topics/domain-specific-language)
+[![static-typing](https://img.shields.io/badge/static--typing-24292f?style=flat-square)](https://github.com/topics/static-typing)
+[![compiler](https://img.shields.io/badge/compiler-24292f?style=flat-square)](https://github.com/topics/compiler)
+[![rust](https://img.shields.io/badge/rust-ce422b?style=flat-square&logo=rust&logoColor=white)](https://github.com/topics/rust)
+[![python-transpiler](https://img.shields.io/badge/python--transpiler-3776ab?style=flat-square&logo=python&logoColor=white)](https://github.com/topics/python-transpiler)
+[![ai-agents](https://img.shields.io/badge/ai--agents-6f42c1?style=flat-square)](https://github.com/topics/ai-agents)
+[![agentic](https://img.shields.io/badge/agentic-6f42c1?style=flat-square)](https://github.com/topics/agentic)
+[![llm](https://img.shields.io/badge/llm-6f42c1?style=flat-square)](https://github.com/topics/llm)
+[![mcp](https://img.shields.io/badge/mcp-6f42c1?style=flat-square)](https://github.com/topics/mcp)
+
 **A small, statically typed language built for AI agent authors.**
 
 Nebula trades symbolic brevity for machine legibility: operators are keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain speaks JSON — structured diagnostics, AST export, IR export, and run records with stable `NEB-*` error codes.
