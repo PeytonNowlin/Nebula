@@ -1,0 +1,13 @@
+[package]
+name = "nebula-load"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+nebula-syntax = { path = "../nebula-syntax" }
+miette.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

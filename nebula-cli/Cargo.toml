@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
 nebula-syntax = { path = "../nebula-syntax" }
+nebula-load = { path = "../nebula-load" }
 nebula-types = { path = "../nebula-types" }
 nebula-ir = { path = "../nebula-ir" }
 nebula-runtime = { path = "../nebula-runtime" }

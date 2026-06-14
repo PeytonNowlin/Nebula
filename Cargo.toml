@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "nebula-ast",
     "nebula-syntax",
+    "nebula-load",
     "nebula-types",
     "nebula-ir",
     "nebula-runtime",

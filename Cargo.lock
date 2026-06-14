@@ -481,6 +481,7 @@ dependencies = [
  "nebula-ast",
  "nebula-fmt",
  "nebula-ir",
+ "nebula-load",
  "nebula-runtime",
  "nebula-syntax",
  "nebula-types",
@@ -503,6 +504,17 @@ dependencies = [
  "nebula-ast",
  "nebula-syntax",
  "nebula-types",
+ "thiserror",
+]
+
+[[package]]
+name = "nebula-load"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "nebula-ast",
+ "nebula-syntax",
+ "tempfile",
  "thiserror",
 ]
 

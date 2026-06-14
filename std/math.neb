@@ -1,0 +1,9 @@
+sector math {
+  fn double(n: Int) -> Int {
+    return n times 2;
+  }
+
+  fn triple(n: Int) -> Int {
+    return n times 3;
+  }
+}

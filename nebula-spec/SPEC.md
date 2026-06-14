@@ -48,7 +48,7 @@ All bindings, parameters, and returns require explicit type annotations.
 program        = { top_level } ;
 top_level      = sector_decl | mission_decl | import_decl ;
 
-import_decl    = "import" string_lit ;
+import_decl    = "import" string_lit [ ";" ] ;
 sector_decl    = "sector" ident "{" { sector_item } "}" ;
 sector_item    = fn_decl | struct_decl | probe_decl ;
 mission_decl   = "mission" ident "{" { mission_item } "}" ;
@@ -95,7 +95,22 @@ struct_lit     = ident "{" [ field_init { "," field_init } ] "}" ;
 field_init     = ident ":" expr ;
 ```
 
-## 5. Semantics
+## 5. Imports
+
+```nebula
+import "../std/math.neb";
+```
+
+- Import paths are string literals resolved relative to the importing file's directory.
+- Imported files are **library modules**: they may contain `sector` declarations and nested
+  `import` statements, but must not define a `mission`.
+- All functions, structs, and probes from imported sectors are merged into the program's
+  global symbol table.
+- Duplicate symbol names across modules are a load error (`NEB-L003`).
+- Circular imports are a load error (`NEB-L002`).
+- Import statements are resolved before type checking and removed from the merged program.
+
+## 6. Semantics
 
 - Bindings are immutable unless declared with `mut`.
 - `set` requires the target binding to be `mut`.
@@ -104,7 +119,7 @@ field_init     = ident ":" expr ;
 - `telemetry` blocks append structured JSONL traces for each statement executed within.
 - `emit` and `return` both exit the current function with a value.
 
-## 6. Error Codes
+## 7. Error Codes
 
 | Prefix | Category |
 |--------|----------|
@@ -112,8 +127,9 @@ field_init     = ident ":" expr ;
 | `NEB-T` | Type |
 | `NEB-R` | Runtime |
 | `NEB-P` | Probe |
+| `NEB-L` | Module load / import |
 
-## 7. Builtins
+## 8. Builtins
 
 Provided by the runtime standard library:
 

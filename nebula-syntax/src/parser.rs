@@ -90,7 +90,9 @@ impl Parser {
         let item = match self.peek().map(|t| &t.kind) {
             Some(TokenKind::Import) => {
                 self.advance();
-                TopLevel::Import(self.parse_string_lit()?)
+                let path = self.parse_string_lit()?;
+                let _ = self.match_kind(TokenKind::Semi);
+                TopLevel::Import(path)
             }
             Some(TokenKind::Sector) => TopLevel::Sector(self.parse_sector()?),
             Some(TokenKind::Mission) => TopLevel::Mission(self.parse_mission()?),

@@ -43,6 +43,18 @@ mission main {
 }
 
 #[test]
+fn parse_import_with_semicolon() {
+    let src = r#"
+import "../std/math.neb";
+
+mission main {
+  print("ok");
+}
+"#;
+    parse(src).expect("import with semicolon should parse");
+}
+
+#[test]
 fn parse_probe_and_telemetry() {
     let src = r#"
 mission main {

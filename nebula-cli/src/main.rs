@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Report};
 use nebula_fmt::format;
 use nebula_ir::lower;
+use nebula_load::load_program;
 use nebula_runtime::Runtime;
 use nebula_syntax::parse;
 use nebula_types::typecheck;
@@ -58,9 +59,14 @@ fn read_file(path: &PathBuf) -> miette::Result<String> {
     fs::read_to_string(path).into_diagnostic()
 }
 
-fn check(path: &PathBuf) -> miette::Result<()> {
+fn compile_pipeline(path: &PathBuf) -> miette::Result<nebula_ast::Program> {
     let source = read_file(path)?;
     let program = parse(&source).map_err(|e| Report::new(e))?;
+    load_program(path, program).map_err(|e| Report::new(e))
+}
+
+fn check(path: &PathBuf) -> miette::Result<()> {
+    let program = compile_pipeline(path)?;
     typecheck(&program).map_err(|errors| {
         let mut report = Report::new(errors[0].clone());
         for err in &errors[1..] {
@@ -84,8 +90,7 @@ fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
 }
 
 fn run(path: &PathBuf, telemetry: Option<PathBuf>) -> miette::Result<()> {
-    let source = read_file(path)?;
-    let program = parse(&source).map_err(|e| Report::new(e))?;
+    let program = compile_pipeline(path)?;
     let typed = typecheck(&program).map_err(|errors| {
         let mut report = Report::new(errors[0].clone());
         for err in &errors[1..] {

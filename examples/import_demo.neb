@@ -1,0 +1,6 @@
+import "../std/math.neb";
+
+mission main {
+  print(int_to_str(double(21)));
+  print(int_to_str(triple(7)));
+}
