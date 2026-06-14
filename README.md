@@ -31,6 +31,23 @@ cargo build --release
 - [Rust](https://www.rust-lang.org/) (2021 edition; recent stable)
 - [Python 3](https://www.python.org/) (transpiled output, MCP probe servers, parity tests)
 
+## Install
+
+**The `nebula` CLI** — build from source:
+
+```bash
+git clone https://github.com/PeytonNowlin/Nebula.git
+cd Nebula
+cargo build --release
+./target/release/nebula --help          # or: cargo run -- --help
+```
+
+**The Python runtime** — `nebula compile --target python` vendors `nebula_runtime/` into each output by default, so deployments are self-contained. To share one runtime across many compiled modules instead, install it from PyPI:
+
+```bash
+pip install nebula-runtime
+```
+
 ## The `nebula` CLI
 
 Build once, then invoke subcommands directly or via `cargo run --`:
