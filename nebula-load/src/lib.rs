@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -122,11 +122,19 @@ fn register_symbol(
     Ok(())
 }
 
+/// Result of resolving imports: a merged program plus each source file's AST.
+#[derive(Debug, Clone)]
+pub struct LoadedProgram {
+    pub merged: Program,
+    pub modules: BTreeMap<PathBuf, Program>,
+}
+
 struct Loader {
     entry_path: PathBuf,
     loaded: HashSet<PathBuf>,
     loading: Vec<PathBuf>,
     imported_sectors: Vec<Spanned<TopLevel>>,
+    modules: BTreeMap<PathBuf, Program>,
     registry: SymbolRegistry,
 }
 
@@ -137,11 +145,18 @@ impl Loader {
             loaded: HashSet::new(),
             loading: Vec::new(),
             imported_sectors: Vec::new(),
+            modules: BTreeMap::new(),
             registry: SymbolRegistry::default(),
         }
     }
 
-    fn load(mut self, program: Program) -> Result<Program, LoadError> {
+    fn load(mut self, program: Program) -> Result<LoadedProgram, LoadError> {
+        let entry_canonical = fs::canonicalize(&self.entry_path).map_err(|_| LoadError::NotFound {
+            path: self.entry_path.clone(),
+            span: 0..0,
+        })?;
+        self.modules.insert(entry_canonical, program.clone());
+
         let entry_dir = self
             .entry_path
             .parent()
@@ -172,7 +187,10 @@ impl Loader {
         let mut items = self.imported_sectors;
         items.extend(entry_items);
 
-        Ok(Program { items })
+        Ok(LoadedProgram {
+            merged: Program { items },
+            modules: self.modules,
+        })
     }
 
     fn load_file(&mut self, path: &Path, span: Span) -> Result<(), LoadError> {
@@ -205,6 +223,7 @@ impl Loader {
             source: e,
             span: span.clone(),
         })?;
+        self.modules.insert(canonical.clone(), program.clone());
 
         let module_dir = canonical.parent().map(Path::to_path_buf).unwrap_or_default();
 
@@ -251,8 +270,13 @@ fn resolve_import_path(base_dir: &Path, import_path: &str) -> PathBuf {
     }
 }
 
-/// Resolve all `import` statements in `program`, loading library modules from disk
-/// and returning a merged program with imports removed.
-pub fn load_program(entry_path: &Path, program: Program) -> Result<Program, LoadError> {
+/// Resolve all `import` statements in `program`, loading library modules from disk.
+/// Returns the merged program (imports stripped) and each loaded file's original AST.
+pub fn load_workspace(entry_path: &Path, program: Program) -> Result<LoadedProgram, LoadError> {
     Loader::new(entry_path.to_path_buf()).load(program)
+}
+
+/// Resolve imports and return only the merged program.
+pub fn load_program(entry_path: &Path, program: Program) -> Result<Program, LoadError> {
+    load_workspace(entry_path, program).map(|loaded| loaded.merged)
 }

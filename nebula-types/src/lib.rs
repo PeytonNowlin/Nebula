@@ -478,7 +478,8 @@ impl Checker {
                 value,
             } => {
                 let resolved_ty = self.resolve_type(&ty.node);
-                let value_ty = self.check_expr(&value.node, scope, errors);
+                let value_ty =
+                    self.check_expr_inner(&value.node, scope, errors, Some(&resolved_ty));
                 if !types_equal(&resolved_ty, &value_ty) {
                     errors.push(TypeError::Mismatch {
                         expected: resolved_ty.display(),
@@ -492,7 +493,7 @@ impl Checker {
                 let binding = scope.get(&name.node).map(|(ty, mutable)| (ty.clone(), *mutable));
                 match binding {
                     Some((bty, true)) => {
-                        let value_ty = self.check_expr(&value.node, scope, errors);
+                        let value_ty = self.check_expr_inner(&value.node, scope, errors, Some(&bty));
                         if !types_equal(&bty, &value_ty) {
                             errors.push(TypeError::Mismatch {
                                 expected: bty.display(),
@@ -551,7 +552,7 @@ impl Checker {
                 }
             }
             Stmt::Emit(expr) | Stmt::Return(expr) => {
-                let ty = self.check_expr(&expr.node, scope, errors);
+                let ty = self.check_expr_inner(&expr.node, scope, errors, Some(expected_return));
                 if !types_equal(expected_return, &ty) {
                     errors.push(TypeError::Mismatch {
                         expected: expected_return.display(),
@@ -595,7 +596,8 @@ impl Checker {
             let found = args.iter().find(|a| a.node.name.node == *pname);
             match found {
                 Some(arg) => {
-                    let actual = self.check_expr_inner(&arg.node.value.node, scope, errors);
+                    let actual =
+                        self.check_expr_inner(&arg.node.value.node, scope, errors, Some(pty));
                     if !types_equal(pty, &actual) {
                         errors.push(TypeError::Mismatch {
                             expected: pty.display(),
@@ -639,8 +641,13 @@ impl Checker {
                     });
                 }
 
-                let list_ty = self.check_expr_inner(&args[0].node, scope, errors);
-                let value_ty = self.check_expr_inner(&args[1].node, scope, errors);
+                let list_ty = self.check_expr_inner(&args[0].node, scope, errors, None);
+                let value_expected = match &list_ty {
+                    Type::List(inner) => Some(inner.as_ref()),
+                    _ => None,
+                };
+                let value_ty =
+                    self.check_expr_inner(&args[1].node, scope, errors, value_expected);
 
                 match list_ty {
                     Type::List(inner) => {
@@ -673,7 +680,7 @@ impl Checker {
                     return Some(Type::Int);
                 }
 
-                let arg_ty = self.check_expr_inner(&args[0].node, scope, errors);
+                let arg_ty = self.check_expr_inner(&args[0].node, scope, errors, None);
                 match arg_ty {
                     Type::List(_) | Type::Str => {}
                     _ => {
@@ -691,10 +698,16 @@ impl Checker {
     }
 
     fn check_expr(&mut self, expr: &Expr, scope: &mut Scope, errors: &mut Vec<TypeError>) -> Type {
-        self.check_expr_inner(expr, scope, errors)
+        self.check_expr_inner(expr, scope, errors, None)
     }
 
-    fn check_expr_inner(&self, expr: &Expr, scope: &mut Scope, errors: &mut Vec<TypeError>) -> Type {
+    fn check_expr_inner(
+        &self,
+        expr: &Expr,
+        scope: &mut Scope,
+        errors: &mut Vec<TypeError>,
+        expected: Option<&Type>,
+    ) -> Type {
         match expr {
             Expr::Int(_) => Type::Int,
             Expr::Float(_) => Type::Float,
@@ -702,7 +715,12 @@ impl Checker {
             Expr::Bool(_) => Type::Bool,
             Expr::None => Type::NoneValue,
             Expr::Some(inner) => {
-                let inner_ty = self.check_expr_inner(&inner.node, scope, errors);
+                let inner_expected = match expected {
+                    Some(Type::Option(inner)) => Some(inner.as_ref()),
+                    _ => None,
+                };
+                let inner_ty =
+                    self.check_expr_inner(&inner.node, scope, errors, inner_expected);
                 Type::Option(Box::new(inner_ty))
             }
             Expr::Ident(name) => match scope.get(&name.node) {
@@ -716,7 +734,7 @@ impl Checker {
                 }
             },
             Expr::Unary { op: UnaryOp::Not, operand } => {
-                let ty = self.check_expr_inner(&operand.node, scope, errors);
+                let ty = self.check_expr_inner(&operand.node, scope, errors, None);
                 if ty != Type::Bool {
                     errors.push(TypeError::Mismatch {
                         expected: "Bool".into(),
@@ -727,8 +745,8 @@ impl Checker {
                 Type::Bool
             }
             Expr::Binary { left, op, right } => {
-                let lty = self.check_expr_inner(&left.node, scope, errors);
-                let rty = self.check_expr_inner(&right.node, scope, errors);
+                let lty = self.check_expr_inner(&left.node, scope, errors, None);
+                let rty = self.check_expr_inner(&right.node, scope, errors, None);
                 match op {
                     BinaryOp::Plus => {
                         if lty == Type::Str && rty == Type::Str {
@@ -801,11 +819,12 @@ impl Checker {
                                 span: callee.span.clone(),
                             });
                         }
-                        for (expected, arg) in fn_info.params.iter().zip(args.iter()) {
-                            let arg_ty = self.check_expr_inner(&arg.node, scope, errors);
-                            if !types_equal(&expected.1, &arg_ty) {
+                        for (param, arg) in fn_info.params.iter().zip(args.iter()) {
+                            let arg_ty =
+                                self.check_expr_inner(&arg.node, scope, errors, Some(&param.1));
+                            if !types_equal(&param.1, &arg_ty) {
                                 errors.push(TypeError::Mismatch {
-                                    expected: expected.1.display(),
+                                    expected: param.1.display(),
                                     found: arg_ty.display(),
                                     span: arg.span.clone(),
                                 });
@@ -822,11 +841,18 @@ impl Checker {
             }
             Expr::List(items) => {
                 if items.is_empty() {
+                    if let Some(Type::List(inner)) = expected {
+                        return Type::List(Box::new((**inner).clone()));
+                    }
                     return Type::List(Box::new(Type::Int));
                 }
-                let first = self.check_expr_inner(&items[0].node, scope, errors);
+                let item_expected = match expected {
+                    Some(Type::List(inner)) => Some(inner.as_ref()),
+                    _ => None,
+                };
+                let first = self.check_expr_inner(&items[0].node, scope, errors, item_expected);
                 for item in &items[1..] {
-                    let ty = self.check_expr_inner(&item.node, scope, errors);
+                    let ty = self.check_expr_inner(&item.node, scope, errors, item_expected);
                     if !types_equal(&first, &ty) {
                         errors.push(TypeError::Mismatch {
                             expected: first.display(),
@@ -839,10 +865,14 @@ impl Checker {
             }
             Expr::Map(entries) => {
                 if entries.is_empty() {
+                    if let Some(Type::Map(key, value)) = expected {
+                        return Type::Map(Box::new((**key).clone()), Box::new((**value).clone()));
+                    }
                     return Type::Map(Box::new(Type::Str), Box::new(Type::Int));
                 }
-                let key_ty = self.check_expr_inner(&entries[0].node.key.node, scope, errors);
-                let val_ty = self.check_expr_inner(&entries[0].node.value.node, scope, errors);
+                let key_ty = self.check_expr_inner(&entries[0].node.key.node, scope, errors, None);
+                let val_ty =
+                    self.check_expr_inner(&entries[0].node.value.node, scope, errors, None);
                 Type::Map(Box::new(key_ty), Box::new(val_ty))
             }
             Expr::StructLit { name, fields } => {
@@ -850,11 +880,16 @@ impl Checker {
                 if let Some(key) = resolved.and_then(|k| self.structs.get(&k).cloned()) {
                     let info = key;
                     for field in fields {
-                        if let Some(expected) = info.fields.get(&field.node.name.node) {
-                            let actual = self.check_expr_inner(&field.node.value.node, scope, errors);
-                            if !types_equal(expected, &actual) {
+                        if let Some(field_ty) = info.fields.get(&field.node.name.node) {
+                            let actual = self.check_expr_inner(
+                                &field.node.value.node,
+                                scope,
+                                errors,
+                                Some(field_ty),
+                            );
+                            if !types_equal(field_ty, &actual) {
                                 errors.push(TypeError::Mismatch {
-                                    expected: expected.display(),
+                                    expected: field_ty.display(),
                                     found: actual.display(),
                                     span: field.node.value.span.clone(),
                                 });
@@ -895,7 +930,7 @@ impl Checker {
                     }
                 }
 
-                let obj_ty = self.check_expr_inner(&object.node, scope, errors);
+                let obj_ty = self.check_expr_inner(&object.node, scope, errors, None);
                 if let Type::Named(ref struct_name) = obj_ty {
                     if let Some(info) = self.struct_info_for_named(struct_name) {
                         if let Some(ty) = info.fields.get(&field.node) {

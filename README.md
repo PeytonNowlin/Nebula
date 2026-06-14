@@ -44,8 +44,8 @@ The `nebula` binary provides three subcommands:
 | Command | Description |
 |---------|-------------|
 | `nebula check <file>` | Parse, resolve imports, and typecheck without running |
-| `nebula fmt <file>` | Print canonical formatted source |
-| `nebula fmt <file> --write` | Rewrite the file in place |
+| `nebula fmt <file>` | Parse, resolve imports, and print canonical formatted entry file |
+| `nebula fmt <file> --write` | Format the entry file and every imported module in place |
 | `nebula run <file>` | Typecheck and execute via the interpreter |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
 | `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
@@ -105,6 +105,8 @@ Brace blocks (`{ ... }`) remain valid and are still used for `sector`, `mission`
 `Int`, `Float`, `Bool`, `Str`, `Void`, `List<T>`, `Map<K, V>`, `Option<T>`, and function types `fn(T1, T2) -> R`. All bindings, parameters, and returns require explicit annotations.
 
 Bare `None` is polymorphic: it type-checks against any `Option<T>`. Use `Some(x)` when you need a concrete `Option<T>`.
+
+Empty `[]` and `{}` pick up types from annotations, parameters, or return types when available (`let xs: List<Str> = []`). Without context they default to `List<Int>` and `Map<Str, Int>`.
 
 String concatenation uses keyword `plus`: `"Hello" plus " world"` (both operands must be `Str`).
 

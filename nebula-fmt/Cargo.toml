@@ -8,4 +8,5 @@ nebula-ast = { path = "../nebula-ast" }
 nebula-syntax = { path = "../nebula-syntax" }
 
 [dev-dependencies]
+nebula-load = { path = "../nebula-load" }
 nebula-test-support = { path = "../nebula-test-support" }

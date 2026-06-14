@@ -408,6 +408,7 @@ name = "nebula-fmt"
 version = "0.1.0"
 dependencies = [
  "nebula-ast",
+ "nebula-load",
  "nebula-syntax",
  "nebula-test-support",
 ]

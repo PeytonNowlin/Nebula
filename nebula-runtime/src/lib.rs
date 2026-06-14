@@ -50,6 +50,10 @@ pub enum RuntimeError {
     #[error("NEB-R003 [runtime_error] undefined variable `{name}`")]
     #[diagnostic(code(nebula::undefined_var))]
     UndefinedVar { name: String },
+
+    #[error("NEB-R004 [runtime_error] division by zero")]
+    #[diagnostic(code(nebula::divide_by_zero))]
+    DivideByZero,
 }
 
 #[derive(Serialize)]
@@ -481,12 +485,14 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
             }),
         },
         BinaryOp::Div => match (l, r) {
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid div operands".into(),
             }),
         },
         BinaryOp::Mod => match (l, r) {
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid mod operands".into(),

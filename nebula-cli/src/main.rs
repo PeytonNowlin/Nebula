@@ -4,9 +4,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Report};
-use nebula_fmt::format;
+use nebula_fmt::format_program;
 use nebula_ir::lower;
-use nebula_load::load_program;
+use nebula_load::load_workspace;
 use nebula_runtime::Runtime;
 use nebula_syntax::parse;
 use nebula_types::{report_with_source, typecheck};
@@ -71,8 +71,9 @@ fn read_file(path: &PathBuf) -> miette::Result<String> {
 fn compile_pipeline(path: &PathBuf) -> miette::Result<CompiledSource> {
     let source = read_file(path)?;
     let program = parse(&source).map_err(|err| report_with_source(path, &source, err))?;
-    let program =
-        load_program(path, program).map_err(|err| report_with_source(path, &source, err))?;
+    let loaded =
+        load_workspace(path, program).map_err(|err| report_with_source(path, &source, err))?;
+    let program = loaded.merged;
     Ok(CompiledSource {
         path: path.clone(),
         source,
@@ -90,11 +91,26 @@ fn check(path: &PathBuf) -> miette::Result<()> {
 
 fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
     let source = read_file(path)?;
-    let formatted = format(&source).map_err(|err| report_with_source(path, &source, err))?;
+    let program = parse(&source).map_err(|err| report_with_source(path, &source, err))?;
+    let loaded =
+        load_workspace(path, program).map_err(|err| report_with_source(path, &source, err))?;
+
+    let entry_canonical = fs::canonicalize(path).into_diagnostic()?;
+
     if write {
-        fs::write(path, &formatted).into_diagnostic()?;
+        for (module_path, module_program) in &loaded.modules {
+            let formatted = format_program(module_program);
+            fs::write(module_path, &formatted).into_diagnostic()?;
+        }
+        eprintln!(
+            "formatted {} module(s), entry {}",
+            loaded.modules.len(),
+            path.display()
+        );
+    } else if let Some(entry_program) = loaded.modules.get(&entry_canonical) {
+        print!("{}", format_program(entry_program));
     } else {
-        print!("{formatted}");
+        print!("{}", format_program(&loaded.merged));
     }
     Ok(())
 }

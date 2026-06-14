@@ -6,7 +6,7 @@ pub fn format(source: &str) -> Result<String, nebula_syntax::ParseError> {
     Ok(format_program(&program))
 }
 
-fn format_program(program: &Program) -> String {
+pub fn format_program(program: &Program) -> String {
     let mut out = String::new();
     for (i, item) in program.items.iter().enumerate() {
         if i > 0 {

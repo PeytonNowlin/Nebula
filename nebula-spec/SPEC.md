@@ -85,16 +85,17 @@ and_expr       = cmp_expr { "and" cmp_expr } ;
 cmp_expr       = add_expr { ( "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "less" "than" | "greater" "than" ) add_expr } ;
 add_expr       = mul_expr { ( "plus" | "minus" ) mul_expr } ;
 mul_expr       = unary_expr { ( "times" | "div" | "mod" ) unary_expr } ;
-unary_expr     = "not" unary_expr | primary_expr ;
+unary_expr     = "not" unary_expr | postfix_expr ;
+postfix_expr   = primary_expr { postfix_suffix } ;
+postfix_suffix = "." ident [ call_or_struct_suffix ] ;
+call_or_struct_suffix = "(" [ expr_list ] ")" | "{" [ field_init { "," field_init } ] "}" ;
 primary_expr   = int_lit | float_lit | string_lit | bool_lit | "None" | "Some" "(" expr ")"
-               | ident | field_access | call_expr | "(" expr ")" | list_lit | map_lit | struct_lit ;
-field_access   = ident "." ident ;
-call_expr      = ident "(" [ expr_list ] ")" ;
+               | ident [ call_or_struct_suffix ]
+               | "(" expr ")" | list_lit | map_lit ;
 expr_list      = expr { "," expr } ;
 list_lit       = "[" [ expr_list ] "]" ;
 map_lit        = "{" [ map_entry { "," map_entry } ] "}" ;
 map_entry      = expr ":" expr ;
-struct_lit     = ident "{" [ field_init { "," field_init } ] "}" ;
 field_init     = ident ":" expr ;
 ```
 
@@ -142,6 +143,9 @@ mission main {
 - The probe host dispatches declared probes to handlers configured in a JSON manifest (`jsonl` logging or external `command` processes). The built-in `log` probe writes structured JSONL events.
 - `telemetry` blocks append structured JSONL traces for each statement executed within.
 - `emit` and `return` both exit the current function with a value.
+- Field access uses postfix `.` on any expression: `p.x`, `geo.origin().x`, `(get_point()).x`, and chained access `p.coords.x`. A suffix `.ident` followed by `(` or `{` forms a qualified call or struct literal when the object is a name or field-access chain (e.g. `math.double(n)`, `geo.Point{ x: 0, y: 0 }`).
+- Empty collection literals need a type when no context is available. `[]` defaults to `List<Int>` and `{}` defaults to `Map<Str, Int>`. When a surrounding annotation, parameter type, return type, or struct field type expects `List<T>` or `Map<K, V>`, an empty literal uses those type parameters (e.g. `let xs: List<Str> = []`, `return []` in a function returning `List<Str>`).
+- Integer `div` and `mod` with a zero divisor fail at runtime with `NEB-R004` (division by zero).
 
 ## 8. Error Codes
 
@@ -150,6 +154,7 @@ mission main {
 | `NEB-S` | Syntax / parse |
 | `NEB-T` | Type |
 | `NEB-R` | Runtime |
+| `NEB-R004` | Division by zero (`div` / `mod` with zero divisor) |
 | `NEB-P` | Probe |
 | `NEB-L` | Module load / import |
 
