@@ -49,6 +49,14 @@ pub enum TypeError {
         field: String,
         span: Span,
     },
+
+    #[error("NEB-T009 [type_error] duplicate {kind} `{name}`")]
+    #[diagnostic(code(nebula::duplicate_symbol))]
+    DuplicateSymbol {
+        kind: String,
+        name: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +131,7 @@ struct Checker {
     functions: HashMap<String, FnInfo>,
     structs: HashMap<String, StructInfo>,
     probes: HashMap<String, ProbeInfo>,
+    sectors: HashMap<String, Span>,
     has_main: bool,
     current_sector: Option<String>,
 }
@@ -151,9 +160,61 @@ impl Checker {
             functions,
             structs: HashMap::new(),
             probes: HashMap::new(),
+            sectors: HashMap::new(),
             has_main: false,
             current_sector: None,
         }
+    }
+
+    fn register_function(
+        &mut self,
+        info: FnInfo,
+        span: Span,
+        errors: &mut Vec<TypeError>,
+    ) {
+        if self.functions.contains_key(&info.qualified_name) {
+            errors.push(TypeError::DuplicateSymbol {
+                kind: "function".into(),
+                name: info.qualified_name,
+                span,
+            });
+            return;
+        }
+        self.functions.insert(info.qualified_name.clone(), info);
+    }
+
+    fn register_probe(
+        &mut self,
+        info: ProbeInfo,
+        span: Span,
+        errors: &mut Vec<TypeError>,
+    ) {
+        if self.probes.contains_key(&info.qualified_name) {
+            errors.push(TypeError::DuplicateSymbol {
+                kind: "probe".into(),
+                name: info.qualified_name,
+                span,
+            });
+            return;
+        }
+        self.probes.insert(info.qualified_name.clone(), info);
+    }
+
+    fn register_struct(
+        &mut self,
+        info: StructInfo,
+        span: Span,
+        errors: &mut Vec<TypeError>,
+    ) {
+        if self.structs.contains_key(&info.qualified_name) {
+            errors.push(TypeError::DuplicateSymbol {
+                kind: "struct".into(),
+                name: info.qualified_name,
+                span,
+            });
+            return;
+        }
+        self.structs.insert(info.qualified_name.clone(), info);
     }
 
     fn with_sector<R>(&mut self, sector: &str, f: impl FnOnce(&mut Self) -> R) -> R {
@@ -216,15 +277,27 @@ impl Checker {
         }
     }
 
-    fn collect_top_level(&mut self, item: &TopLevel, _errors: &mut Vec<TypeError>) {
+    fn collect_top_level(&mut self, item: &TopLevel, errors: &mut Vec<TypeError>) {
         match item {
             TopLevel::Sector(sector) => {
                 let sector_name = sector.node.name.node.clone();
+                if self.sectors.contains_key(&sector_name) {
+                    errors.push(TypeError::DuplicateSymbol {
+                        kind: "sector".into(),
+                        name: sector_name.clone(),
+                        span: sector.node.name.span.clone(),
+                    });
+                } else {
+                    self.sectors
+                        .insert(sector_name.clone(), sector.node.name.span.clone());
+                }
                 for sitem in &sector.node.items {
                     match sitem {
-                        SectorItem::Fn(f) => self.collect_fn(&f.node, &sector_name),
-                        SectorItem::Struct(s) => self.collect_struct(&s.node, &sector_name),
-                        SectorItem::Probe(p) => self.collect_probe(&p.node, Some(&sector_name)),
+                        SectorItem::Fn(f) => self.collect_fn(&f.node, &sector_name, errors),
+                        SectorItem::Struct(s) => self.collect_struct(&s.node, &sector_name, errors),
+                        SectorItem::Probe(p) => {
+                            self.collect_probe(&p.node, Some(&sector_name), errors)
+                        }
                     }
                 }
             }
@@ -234,7 +307,7 @@ impl Checker {
                 }
                 for mitem in &mission.node.items {
                     if let MissionItem::Probe(p) = mitem {
-                        self.collect_probe(&p.node, None);
+                        self.collect_probe(&p.node, None, errors);
                     }
                 }
             }
@@ -242,7 +315,7 @@ impl Checker {
         }
     }
 
-    fn collect_fn(&mut self, f: &FnDecl, sector: &str) {
+    fn collect_fn(&mut self, f: &FnDecl, sector: &str, errors: &mut Vec<TypeError>) {
         let name = f.name.node.clone();
         let qualified_name = qualify(sector, &name);
         self.with_sector(sector, |checker| {
@@ -256,8 +329,7 @@ impl Checker {
                     )
                 })
                 .collect();
-            checker.functions.insert(
-                qualified_name.clone(),
+            checker.register_function(
                 FnInfo {
                     sector: sector.to_string(),
                     name,
@@ -265,11 +337,13 @@ impl Checker {
                     params,
                     return_type: checker.resolve_type(&f.return_type.node),
                 },
+                f.name.span.clone(),
+                errors,
             );
         });
     }
 
-    fn collect_struct(&mut self, s: &StructDecl, sector: &str) {
+    fn collect_struct(&mut self, s: &StructDecl, sector: &str, errors: &mut Vec<TypeError>) {
         let name = s.name.node.clone();
         let qualified_name = qualify(sector, &name);
         let mut fields = HashMap::new();
@@ -279,18 +353,24 @@ impl Checker {
                 self.with_sector(sector, |checker| checker.resolve_type(&f.node.ty.node)),
             );
         }
-        self.structs.insert(
-            qualified_name.clone(),
+        self.register_struct(
             StructInfo {
                 sector: sector.to_string(),
                 name,
                 qualified_name,
                 fields,
             },
+            s.name.span.clone(),
+            errors,
         );
     }
 
-    fn collect_probe(&mut self, p: &ProbeDecl, sector: Option<&str>) {
+    fn collect_probe(
+        &mut self,
+        p: &ProbeDecl,
+        sector: Option<&str>,
+        errors: &mut Vec<TypeError>,
+    ) {
         let name = p.name.node.clone();
         let qualified_name = sector
             .map(|s| qualify(s, &name))
@@ -300,8 +380,7 @@ impl Checker {
             .iter()
             .map(|param| (param.node.name.node.clone(), param.node.ty.node.clone()))
             .collect();
-        self.probes.insert(
-            qualified_name.clone(),
+        self.register_probe(
             ProbeInfo {
                 sector: sector.map(str::to_string),
                 name,
@@ -309,6 +388,8 @@ impl Checker {
                 params,
                 return_type: p.return_type.node.clone(),
             },
+            p.name.span.clone(),
+            errors,
         );
     }
 
