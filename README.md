@@ -1,85 +1,98 @@
 # Nebula
 
-Nebula is a general-purpose programming language designed for AI agent authors. Every construct favors machine parseability over human brevity: operators are spelled as keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain exposes structured error codes and JSON output for reliable agent feedback.
+**A small, statically typed language built for AI agent authors.**
 
-This repository contains the Nebula compiler and interpreter, implemented in Rust.
+Nebula trades symbolic brevity for machine legibility: operators are keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain speaks JSON — structured diagnostics, AST export, IR export, and run records with stable `NEB-*` error codes.
 
-## Features
+This repository is the reference implementation: a Rust compiler and interpreter with a Python backend, probe host, and in-process embedding API.
 
-- **Keyword-based syntax** — arithmetic and comparisons use words instead of symbols, so parsers and agents can read source without ambiguity.
-- **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
-- **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (`jsonl`, external `command`, or **MCP** via `--probes` manifest).
-- **Telemetry** — `telemetry` blocks emit structured JSONL traces with binding values after `let`/`set` and probe args + result summaries for each `call`.
-- **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
-- **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation; deprecated syntax forms are rejected at parse time (`NEB-S004`, `NEB-S005`).
-- **Structured JSON I/O** — `check`, `run`, `parse`, `ir`, and `probes list` support `--json` for machine-readable diagnostics, AST export, IR export, and probe introspection.
-- **In-process embedding** — the `nebula-host` crate exposes `check_source`, `run_source`, and `list_probes` for agent runtimes that want to avoid subprocess overhead.
-- **Full pipeline** — parse → load/merge → typecheck → IR → interpret or transpile.
+**Status:** v0.1 — language and toolchain are experimental but fully tested.
+
+## Hello, Nebula
+
+```nebula
+mission main {
+  print("Hello from Nebula");
+}
+```
+
+```bash
+cargo build --release
+./target/release/nebula run examples/hello.neb
+# Hello from Nebula
+```
 
 ## Requirements
 
-- [Rust](https://www.rust-lang.org/) (2021 edition; any recent stable toolchain)
-- [Python 3](https://www.python.org/) (required for MCP probe servers, transpiled output, and integration tests)
+- [Rust](https://www.rust-lang.org/) (2021 edition; recent stable)
+- [Python 3](https://www.python.org/) (transpiled output, MCP probe servers, parity tests)
 
-## Quick start
+## The `nebula` CLI
+
+Build once, then invoke subcommands directly or via `cargo run --`:
+
+| Command | Purpose |
+|---------|---------|
+| `check <file>` | Parse, resolve imports, typecheck |
+| `run <file>` | Typecheck and execute |
+| `parse <file> --json [--load]` | Export AST (optionally merged workspace) |
+| `ir <file> --json` | Export lowered IR |
+| `fmt <file> [--write]` | Canonical formatter |
+| `compile <file> --target python --out <dir>` | Transpile to Python |
+| `probes list --probes <manifest> [--mcp] [--json]` | Inspect probe bindings and MCP tools |
+
+### Agent-oriented flags
+
+**Validation**
 
 ```bash
-# Build the CLI
-cargo build --release
-
-# Run an example
-cargo run -- run examples/hello.neb
-
-# Or use the binary directly after building
-./target/release/nebula run examples/hello.neb
+nebula check examples/fizzbuzz.neb
+nebula check examples/fizzbuzz.neb --json   # success → `[]` on stdout; failure → JSON on stderr
 ```
 
-Expected output:
+**Execution**
 
+```bash
+nebula run examples/agent_counter.neb
+nebula run examples/agent_counter.neb --telemetry trace.jsonl
+nebula run examples/agent_counter.neb --probes probes/bundle.json
+nebula run examples/runbook.neb --probes probes/runbook.json --json
 ```
-Hello from Nebula
+
+**Resource limits** (interpreter defaults: 30s wall clock, 1M while-loop iterations, 64 MiB approximate memory)
+
+```bash
+nebula run examples/hello.neb --max-runtime-ms 5000
+nebula run examples/hello.neb --max-loop-iterations 100000
+nebula run examples/hello.neb --max-memory-mb 128
+nebula run examples/hello.neb --no-resource-limits
 ```
 
-## CLI
+**Introspection and transpilation**
 
-The `nebula` binary provides seven subcommands: `check`, `parse`, `ir`, `fmt`, `run`, `probes`, and `compile`.
+```bash
+nebula parse examples/import_demo.neb --json --load
+nebula ir examples/hello.neb --json
+nebula probes list --probes probes/mcp_stdio.json --mcp --json
+nebula compile examples/import_demo.neb --target python --out dist/
+python dist/examples/import_demo.py
+```
 
-### Validation and execution
+### JSON output
 
-| Command | Description |
-|---------|-------------|
-| `nebula check <file>` | Parse, resolve imports, and typecheck without running |
-| `nebula check <file> --json` | On success, print `[]` to stdout; on failure, print a JSON diagnostic array to stderr |
-| `nebula run <file>` | Typecheck and execute via the interpreter |
-| `nebula run <file> --json` | Emit one structured run record JSON object on stdout (see run record schema below) |
-| `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
-| `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
+`check --json` emits a diagnostic array on **stderr** when validation fails:
 
-### Introspection and export
+```json
+[
+  {
+    "code": "NEB-T002",
+    "span": { "file": "example.neb", "start": 42, "end": 58, "line": 3, "column": 15 },
+    "message": "type mismatch: expected Int, found Str"
+  }
+]
+```
 
-| Command | Description |
-|---------|-------------|
-| `nebula parse <file> --json` | Export the parsed AST as JSON on stdout |
-| `nebula parse <file> --json --load` | Resolve imports and export the merged workspace AST |
-| `nebula ir <file> --json` | Typecheck, lower, and export IR as JSON on stdout |
-| `nebula probes list --probes <path>` | List manifest probe bindings |
-| `nebula probes list --probes <path> --mcp` | Also query each MCP server's live `tools/list` catalog |
-| `nebula probes list --probes <path> --json [--mcp]` | Emit the probe report as JSON on stdout |
-
-### Formatting and transpilation
-
-| Command | Description |
-|---------|-------------|
-| `nebula fmt <file>` | Parse, resolve imports, and print canonical formatted entry file |
-| `nebula fmt <file> --write` | Format the entry file and every imported module in place |
-| `nebula compile <file> --target python --out <dir>` | Transpile to a multi-module Python package |
-| `nebula compile <file> --target python --out <dir> --probes <path>` | Embed probe manifest defaults in the entry module |
-
-### JSON diagnostic format
-
-When `--json` is passed to `check`, failures emit a JSON array of diagnostic objects on **stderr**:
-
-When `--json` is passed to `run`, stdout is always one run record object (success or failure):
+`run --json` always emits one **run record** on **stdout** (success or failure). Schema: [`schemas/run-record.schema.json`](schemas/run-record.schema.json).
 
 ```json
 {
@@ -88,101 +101,22 @@ When `--json` is passed to `run`, stdout is always one run record object (succes
   "diagnostics": [],
   "telemetry_path": "trace.jsonl",
   "probe_events": [
-    { "ts": 1718380800, "probe": "log", "args": { "level": "info", "message": "1" } }
+    { "ts": 1718380800, "probe": "log", "args": { "level": "info", "message": "ready" } }
   ],
-  "duration_ms": 42
+  "duration_ms": 42,
+  "printed": ["deploy ok"],
+  "return_value": null,
+  "probes_called": []
 }
 ```
 
-Schema: [`schemas/run-record.schema.json`](schemas/run-record.schema.json). `probe_events` collects jsonl probe output (e.g. `log` calls); `diagnostics` is empty on success.
-
-`check --json` failure format:
-
-```json
-[
-  {
-    "code": "NEB-T002",
-    "span": {
-      "file": "example.neb",
-      "start": 42,
-      "end": 58,
-      "line": 3,
-      "column": 15
-    },
-    "message": "type mismatch: expected Int, found Str"
-  }
-]
-```
-
-Each record has `code`, `message`, and an optional `span` with byte offsets and 1-based line/column when source text is available. Type checking emits one record per error. Successful `check --json` prints `[]` to stdout.
-
-### Example commands
-
-```bash
-# Validate
-cargo run -- check examples/fizzbuzz.neb
-cargo run -- check examples/fizzbuzz.neb --json
-
-# Export structure
-cargo run -- parse examples/import_demo.neb --json --load
-cargo run -- ir examples/hello.neb --json
-
-# Run with observation
-cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
-cargo run -- run examples/agent_counter.neb --probes probes/host.json
-cargo run -- run examples/io_agent.neb --probes probes/bundle.json
-cargo run -- run examples/runbook.neb --probes probes/runbook.json
-
-# Discover MCP tools before authoring probe calls
-cargo run -- probes list --probes probes/mcp_stdio.json --mcp --json
-
-# Transpile
-cargo run -- compile examples/import_demo.neb --target python --out dist/
-python dist/examples/import_demo.py
-```
-
-## Agent embedding
-
-For agent runtimes that call Nebula in-process instead of shelling out to the CLI, use the `nebula-host` crate:
-
-```rust
-use nebula_host::{Host, HostConfig};
-
-let host = Host::new();
-let check = host.check_source(r#"mission main { let x: Int = 1; }"#);
-assert!(check.ok);
-
-let run = host.run_source(r#"mission main { print("Hello from Nebula"); }"#);
-assert!(run.ok);
-assert_eq!(run.printed, vec!["Hello from Nebula"]);
-```
-
-`HostConfig` supports probe manifests, runtime secret overlays, telemetry paths, interpreter resource limits, and a custom source label for diagnostics. `run_*` applies agent-safe defaults (30s timeout, 1M while-loop iterations, 64 MiB memory) unless `resource_limits: ResourceLimits::unlimited()` is set. `RunResult` includes a [`RunRecord`](schemas/run-record.schema.json) with program path, exit status, diagnostics, telemetry path, captured probe events, and duration.
-
-```bash
-# Defaults: 30s / 1M iterations / 64 MiB
-cargo run -- run examples/hello.neb
-
-# Override or disable
-cargo run -- run examples/hello.neb --max-runtime-ms 5000
-cargo run -- run examples/hello.neb --no-resource-limits
-```
-
-## JSON schemas
-
-Structured runtime events are documented as JSON Schema files under [`schemas/`](schemas/):
-
-| Schema | Used by |
-|--------|---------|
-| [`diagnostic.schema.json`](schemas/diagnostic.schema.json) | `check --json` error records and `nebula-host` `DiagnosticJson` (`code`, `message`, optional `span`) |
-| [`run-record.schema.json`](schemas/run-record.schema.json) | `run --json` execution record (`program`, `exit`, `diagnostics`, `telemetry_path`, `probe_events`, `duration_ms`) |
-| [`telemetry-event.schema.json`](schemas/telemetry-event.schema.json) | `telemetry` block JSONL traces (`step`, `detail`) |
-| [`probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json) | `jsonl` probe handler output (`ts`, `probe`, `args`) |
-| [`nebula-value.schema.json`](schemas/nebula-value.schema.json) | Probe argument values in JSONL and command-probe protocols |
+Other schemas live under [`schemas/`](schemas/): diagnostics, telemetry events, probe JSONL, probe manifests, and Nebula value encoding.
 
 ## Language overview
 
-Programs consist of top-level `sector` declarations (libraries), `import` statements, and a single `mission main` entry point.
+Full specification: [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). Constrained-generation grammar: [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
+
+A program is a set of `sector` libraries, `import` statements, and exactly one `mission` entry point (conventionally `main`).
 
 ```nebula
 sector math {
@@ -201,160 +135,32 @@ mission main {
 }
 ```
 
-### Sector namespacing
+### Design choices
 
-Symbols inside a `sector` are stored as `sector.name`:
-
-- From `mission`, use **qualified** names: `math.double(10)`
-- Inside a sector function, same-sector symbols may be **unqualified**: `double(n)`
-- Builtins and mission-level probes stay unqualified: `print(...)`, `call log(...)`
-
-### Control-flow blocks
-
-`if`, `while`, and `telemetry` use `end`-delimited blocks. Brace blocks for control flow are rejected (`NEB-S005`):
-
-```nebula
-if count eq 0 then
-  print("zero");
-else
-  print("nonzero");
-end
-```
-
-Braces (`{ ... }`) are used for `sector`, `mission`, `fn`, and `struct` bodies only.
-
-Comparisons use `lt`, `gt`, `le`, `ge`, `eq`, and `ne` only. Synonyms such as `less than` / `greater than` are rejected (`NEB-S004`).
-
-### Types
-
-`Int`, `Float`, `Bool`, `Str`, `Void`, `List<T>`, `Map<K, V>`, `Option<T>`, and function types `fn(T1, T2) -> R`. All bindings, parameters, and returns require explicit annotations.
-
-Bare `None` is polymorphic: it type-checks against any `Option<T>`. Use `Some(x)` when you need a concrete `Option<T>`.
-
-Empty `[]` and `{}` pick up types from annotations, parameters, or return types when available (`let xs: List<Str> = []`). Without context they default to `List<Int>` and `Map<Str, Int>`.
-
-String concatenation uses keyword `plus`: `"Hello" plus " world"` (both operands must be `Str`).
-
-Field access works on expressions, not just variables: `geo.origin().x`, `p.coords.y`, `(get_point()).x`.
+| Topic | Behavior |
+|-------|----------|
+| **Operators** | Keywords, not symbols: `plus`, `minus`, `times`, `div`, `mod`, `eq`, `lt`, … |
+| **Control flow** | `if` / `while` / `telemetry` use `end`-delimited blocks; brace blocks for control flow are rejected (`NEB-S005`) |
+| **Comparisons** | Only `lt`, `gt`, `le`, `ge`, `eq`, `ne`; synonyms like `less than` are rejected (`NEB-S004`) |
+| **Types** | All bindings, parameters, and returns are annotated; no implicit coercion |
+| **Namespacing** | Sector symbols are qualified (`math.double`); same-sector calls may be unqualified inside the sector |
+| **Numeric semantics** | Matching `Int`/`Int` or `Float`/`Float` operands; checked 64-bit integer arithmetic (`NEB-R007` on overflow); `div`/`mod` truncate toward zero |
+| **Collections** | `List<T>`, `Map<K,V>`, `Option<T>`; empty `[]` / `{}` infer from context or default to `List<Int>` / `Map<Str,Int>` |
+| **Strings** | UTF-8; `len` and string builtins operate on Unicode code points; both backends agree (parity-tested) |
 
 ### Builtins
 
-Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
+Builtins are implemented in the runtime — not loaded from source. The canonical surface is [`nebula-builtins/builtins.toml`](nebula-builtins/builtins.toml) (signatures stay in sync across the typechecker, interpreter, and Python shim). Human-readable notes: [`std/core.neb`](std/core.neb).
 
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `print` | `fn(value: Str) -> Void` | Writes to stdout |
-| `len` | `fn(value: List<T> or Map<K,V> or Str) -> Int` | Element count, or string length in **code points** |
-| `push` | `fn(list: List<T>, value: T) -> Void` | Mutates a **list variable** in place; first arg must be an identifier |
-| `at` | `fn(list: List<T>, index: Int) -> T` | 0-based element access; out-of-range fails `NEB-R005` |
-| `get` | `fn(map: Map<K,V>, key: K) -> V` | Map lookup; missing key fails `NEB-R006` |
-| `has` | `fn(map: Map<K,V>, key: K) -> Bool` | Map key presence test |
-| `insert` | `fn(map: Map<K,V>, key: K, value: V) -> Void` | Mutates a **map variable** in place; first arg must be an identifier |
-| `str_to_int` | `fn(s: Str) -> Int` | |
-| `int_to_str` | `fn(n: Int) -> Str` | |
-| `str_to_float` | `fn(s: Str) -> Float` | |
-| `float_to_str` | `fn(f: Float) -> Str` | |
-| `int_to_float` | `fn(n: Int) -> Float` | Explicit widening (no implicit coercion) |
-| `float_to_int` | `fn(f: Float) -> Int` | Truncates toward zero |
-| `substr` | `fn(s: Str, start: Int, end: Int) -> Str` | Code-point slice `[start, end)`, clamped; no negative indexing |
-| `contains` | `fn(s: Str, needle: Str) -> Bool` | Substring test |
-| `index_of` | `fn(s: Str, needle: Str) -> Int` | First code-point index of `needle`, or `-1` |
-| `starts_with` | `fn(s: Str, prefix: Str) -> Bool` | |
-| `ends_with` | `fn(s: Str, suffix: Str) -> Bool` | |
-| `to_upper` | `fn(s: Str) -> Str` | |
-| `to_lower` | `fn(s: Str) -> Str` | |
-| `trim` | `fn(s: Str) -> Str` | Strip leading/trailing whitespace |
-| `replace` | `fn(s: Str, from: Str, to: Str) -> Str` | Replace all occurrences |
-| `split` | `fn(s: Str, sep: Str) -> List<Str>` | Split on `sep`; empty `sep` errors |
-| `join` | `fn(parts: List<Str>, sep: Str) -> Str` | Join with `sep` |
-| `abs` | `fn(n: Int) -> Int` | Magnitude; overflows on `i64::MIN` (`NEB-R007`) |
-| `min` | `fn(a: Int, b: Int) -> Int` | Smaller of two |
-| `max` | `fn(a: Int, b: Int) -> Int` | Larger of two |
+| Category | Functions |
+|----------|-----------|
+| I/O | `print` |
+| Collections | `len`, `push`, `at`, `get`, `has`, `insert` |
+| Conversions | `str_to_int`, `int_to_str`, `str_to_float`, `float_to_str`, `int_to_float`, `float_to_int` |
+| Strings | `substr`, `contains`, `index_of`, `starts_with`, `ends_with`, `to_upper`, `to_lower`, `trim`, `replace`, `split`, `join` |
+| Integers | `abs`, `min`, `max` |
 
-### Numeric semantics
-
-Arithmetic and ordering require **both operands to share a numeric type** — both `Int` or both `Float`. There is no implicit coercion; convert with `int_to_float` / `float_to_int`. Integer `div`/`mod` truncate toward zero (the remainder's sign follows the dividend). `Int` is 64-bit with **checked** arithmetic — overflow raises `NEB-R007` rather than wrapping or widening to a bignum. `eq`/`ne` compare deeply, including lists, maps, options, and structs. `len` on a string counts Unicode code points. The interpreter and the Python backend produce identical results for all of these (enforced by the parity test suite).
-
-### `return` and `emit`
-
-Both exit the current function with a value. `return` is the conventional form; `emit` is available as an agent-friendly alias with identical semantics.
-
-### Probes and telemetry
-
-Probes declare capabilities the host is expected to provide. `call` invokes them through the probe host configured with `--probes <manifest.json>`:
-
-| Handler kind | Description |
-|--------------|-------------|
-| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
-| `command` | External process with Nebula's stdin/stdout JSON protocol |
-| `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
-| `read_file` / `write_file` / `http_get` / `json_parse` / `env_get` / `secret_get` | Native bundle handlers (manifest-only; still require `probe` declarations in source) |
-
-**Default probe bundle** — [`probes/bundle.json`](probes/bundle.json) wires `log` plus five I/O probes for orchestration without custom command scripts:
-
-```bash
-cargo run -- run examples/io_agent.neb --probes probes/bundle.json
-```
-
-Bundle probes inherit the host process permissions; treat manifests as trusted configuration.
-
-**Secrets** — declare credentials in the manifest `secrets` map (resolved from env vars), inject into handler config with `${secret:name}` templates, and read by logical name via `secret_get` (never put secret values in `.neb` source). `HostConfig.secrets` overlays manifest entries for embedders.
-
-**Command probes** use a stdin/stdout JSON protocol:
-
-```json
-{"probe":"notify","args":{"channel":"ops","message":"ready"}}
-{"status":"ok"}
-```
-
-**MCP probes** map declared probes to MCP `tools/call` on servers defined in the manifest:
-
-```json
-{
-  "mcp_servers": {
-    "local": {
-      "transport": "stdio",
-      "command": ["python3", "scripts/mcp_mock_stdio.py"]
-    },
-    "remote": {
-      "transport": "http",
-      "url": "http://127.0.0.1:8765/mcp"
-    }
-  },
-  "probes": {
-    "log": { "kind": "jsonl" },
-    "notify": {
-      "kind": "mcp",
-      "server": "local",
-      "tool": "notify"
-    }
-  }
-}
-```
-
-- One live MCP connection is reused per `mcp_servers` entry (not per `call`).
-- `tool` defaults to the probe's short name if omitted.
-- MCP transport failures report `NEB-P004`; tool execution errors report `NEB-P003`.
-
-Example manifests: [`probes/host.json`](probes/host.json), [`probes/bundle.json`](probes/bundle.json), [`probes/mcp_stdio.json`](probes/mcp_stdio.json). Mock MCP servers for tests: [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py), [`scripts/mcp_mock_http.py`](scripts/mcp_mock_http.py).
-
-```nebula
-mission main {
-  probe log(level: Str, message: Str) -> Void;
-
-  telemetry
-    call log(level: "info", message: "starting");
-  end
-}
-```
-
-Run with MCP probes:
-
-```bash
-cargo run -- run examples/agent_counter.neb --probes probes/mcp_stdio.json
-```
-
-With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event matching [`schemas/telemetry-event.schema.json`](schemas/telemetry-event.schema.json).
+`push` and `insert` mutate a **variable** in place; their first argument must be an identifier.
 
 ### Imports
 
@@ -366,89 +172,138 @@ mission main {
 }
 ```
 
-Import paths are relative to the importing file. Library modules may contain sectors and nested imports but must not define a `mission`. Symbols are merged with sector namespacing (`math.triple`, not a flat global `triple`).
+Import paths are string literals, resolved relative to the importing file. Library modules may define sectors and nested imports but not a `mission`. Duplicate symbols across modules fail at load time (`NEB-L003`).
+
+Importable standard module: [`std/math.neb`](std/math.neb).
+
+### Probes and telemetry
+
+Probes declare host-provided capabilities; `call` dispatches them through a JSON manifest (`--probes`):
+
+```nebula
+mission main {
+  probe log(level: Str, message: Str) -> Void;
+
+  telemetry
+    call log(level: "info", message: "starting");
+  end
+}
+```
+
+| Handler kind | Role |
+|--------------|------|
+| `jsonl` | Structured logging (`log` probe) |
+| `command` | External process with stdin/stdout JSON protocol |
+| `mcp` | Model Context Protocol tool call (stdio or HTTP) |
+| `read_file`, `write_file`, `http_get`, `json_parse`, `env_get`, `secret_get` | Native bundle handlers |
+
+Example manifests: [`probes/host.json`](probes/host.json), [`probes/bundle.json`](probes/bundle.json), [`probes/mcp_stdio.json`](probes/mcp_stdio.json), [`probes/runbook.json`](probes/runbook.json).
+
+Secrets are declared in the manifest `secrets` map (resolved from environment variables), substituted into handler config via `${secret:name}`, and read at runtime with `secret_get` — never embed secret values in `.neb` source.
+
+With `--telemetry`, statements inside `telemetry` blocks append JSONL events ([`schemas/telemetry-event.schema.json`](schemas/telemetry-event.schema.json)).
 
 ### Error codes
 
 | Prefix | Category |
 |--------|----------|
-| `NEB-S` | Syntax / parse |
-| `NEB-S004` | Deprecated comparison keyword (`less than`, `greater than`) |
-| `NEB-S005` | Deprecated brace block for control flow |
-| `NEB-T` | Type |
+| `NEB-S` | Syntax / lex |
+| `NEB-T` | Type checking |
+| `NEB-L` | Module load / imports |
 | `NEB-R` | Runtime |
-| `NEB-P` | Probe |
-| `NEB-P004` | MCP transport / protocol failure |
-| `NEB-L` | Module load / import |
+| `NEB-P` | Probes / MCP |
 
-Type checking reports multiple errors at once with source spans (`NEB-T002`, `NEB-T009`, etc.) rather than stopping at the first failure.
+Type checking reports multiple errors with spans in one pass.
+
+## Embedding (`nebula-host`)
+
+For agent loops that should not shell out to the CLI:
+
+```rust
+use nebula_host::{Host, HostConfig, ResourceLimits};
+
+let host = Host::with_config(HostConfig {
+    probe_manifest: Some("probes/bundle.json".into()),
+    telemetry_path: Some("trace.jsonl".into()),
+    resource_limits: ResourceLimits::agent_defaults(),
+    ..HostConfig::default()
+});
+
+let check = host.check_source(r#"mission main { let x: Int = 1; }"#);
+assert!(check.ok);
+
+let run = host.run_file("examples/hello.neb");
+assert!(run.ok);
+assert_eq!(run.printed, vec!["Hello from Nebula"]);
+// run.record is a RunRecord (same shape as `nebula run --json`)
+```
+
+Pipeline stages are also available directly via `Host::try_parse_file`, `try_compile_file`, `try_emit_python`, and `list_probes`.
+
+## Compiler pipeline
+
+```
+.neb source
+  → nebula-syntax   (lex + parse)
+  → nebula-load     (imports, workspace merge)
+  → nebula-types    (typecheck; builtins from nebula-builtins)
+  → nebula-ir       (lower)
+  → nebula-runtime  (interpret)  |  nebula-python (transpile)
+```
+
+| Crate | Role |
+|-------|------|
+| `nebula-builtins` | Canonical builtin manifest (`builtins.toml`) |
+| `nebula-syntax` | Lexer and parser |
+| `nebula-ast` | AST types, `NebError`, JSON diagnostic types |
+| `nebula-load` | Import graph and symbol merge |
+| `nebula-types` | Type checker |
+| `nebula-ir` | Intermediate representation |
+| `nebula-runtime` | Interpreter, probe host, resource limits |
+| `nebula-mcp` | MCP client transport |
+| `nebula-host` | Unified pipeline and embedding API |
+| `nebula-diagnostics` | `miette::Report` → JSON diagnostic extraction |
+| `nebula-fmt` | Formatter |
+| `nebula-python` | Python transpiler and runtime shim |
+| `nebula-cli` | `nebula` binary |
+| `nebula-test-support` | Integration tests and golden files (internal) |
 
 ## Examples
 
 | File | Demonstrates |
 |------|--------------|
-| `examples/hello.neb` | Minimal program |
-| `examples/fizzbuzz.neb` | Sectors, conditionals, loops |
-| `examples/end_demo.neb` | `end`-delimited control-flow blocks |
-| `examples/push_demo.neb` | Lists and `push` / `len` builtins |
-| `examples/import_demo.neb` | Importing `std/math.neb` |
-| `examples/agent_counter.neb` | Probes, telemetry, mutable state |
-| `examples/runbook.neb` | Deploy readiness runbook: sectors, retry loop, command + MCP probes |
+| [`examples/hello.neb`](examples/hello.neb) | Minimal program |
+| [`examples/fizzbuzz.neb`](examples/fizzbuzz.neb) | Sectors, conditionals, loops |
+| [`examples/end_demo.neb`](examples/end_demo.neb) | `end`-delimited control flow |
+| [`examples/push_demo.neb`](examples/push_demo.neb) | Lists, `push`, `len` |
+| [`examples/import_demo.neb`](examples/import_demo.neb) | Importing `std/math.neb` |
+| [`examples/agent_counter.neb`](examples/agent_counter.neb) | Probes, telemetry, mutable state |
+| [`examples/io_agent.neb`](examples/io_agent.neb) | Bundle probes (`read_file`, `http_get`, …) |
+| [`examples/runbook.neb`](examples/runbook.neb) | Retry loop, command + MCP probes |
 
-## Project structure
+## Python backend
 
-Rust workspace crates, each handling one stage of the pipeline:
+`nebula compile --target python --out <dir>` emits:
 
-| Crate | Role |
-|-------|------|
-| `nebula-syntax` | Lexer (logos) and hand-written recursive-descent parser |
-| `nebula-ast` | Abstract syntax tree types (JSON-serializable) |
-| `nebula-load` | Import resolution and program merging |
-| `nebula-types` | Type checker |
-| `nebula-ir` | Intermediate representation lowering |
-| `nebula-runtime` | Tree-walking interpreter and probe host |
-| `nebula-mcp` | MCP client (stdio + HTTP) for probe transport |
-| `nebula-diagnostics` | Structured `DiagnosticJson` extraction for agent feedback |
-| `nebula-host` | In-process embedding API (`check_source`, `run_source`, `list_probes`) |
-| `nebula-fmt` | Canonical formatter |
-| `nebula-cli` | `nebula` command-line tool |
-| `nebula-python` | IR → Python transpiler and `nebula_runtime` shim bundler |
-| `nebula-test-support` | Integration tests, golden files, and shared pipeline helpers (not published) |
-
-The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). The GBNF grammar for constrained generation is at [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
-
-[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`). Probe host configuration examples live in [`probes/host.json`](probes/host.json) and [`probes/mcp_stdio.json`](probes/mcp_stdio.json); see [`scripts/probe_ok.py`](scripts/probe_ok.py) for a minimal command handler and [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py) for a mock MCP server.
-
-## Python transpilation
-
-`nebula compile --target python --out <dir>` emits a runnable package:
-
-- One `.py` module per `.neb` file in the import graph (e.g. `examples/import_demo.py`, `std/math.py`)
-- A copied `nebula_runtime/` shim providing builtins, probes, telemetry, truthiness, and `NEB-R004` divide-by-zero checks
+- One `.py` module per `.neb` file in the import graph
+- A copied `nebula_runtime/` shim (builtins, probes, telemetry, checked arithmetic)
 - Sector namespaces as Python classes with `@staticmethod` functions
 
-The entry module includes `if __name__ == "__main__"` calling `run_main(main)`.
-
-## Roadmap (not yet implemented)
-
-- Loadable stdlib beyond importable `.neb` modules
-- JSON Schema for CLI diagnostic objects
+The Rust interpreter and Python backend are kept in parity by an integration test suite.
 
 ## Development
 
 ```bash
-# Run all tests (unit, integration, CLI e2e, golden diagnostics/fmt)
-cargo test
-
-# Refresh golden files after intentional output changes
-NEBULA_UPDATE_GOLDEN=1 cargo test -p nebula-test-support
-
-# Format Rust code
-cargo fmt
-
-# Lint
-cargo clippy
+cargo test                  # full workspace: unit, integration, CLI e2e, parity
+cargo fmt && cargo clippy
+NEBULA_UPDATE_GOLDEN=1 cargo test -p nebula-test-support   # refresh golden files
 ```
+
+## Roadmap
+
+- Package manager / module registry beyond relative imports
+- Additional compile targets beyond Python
+- Standard library modules beyond `std/math.neb`
 
 ## License
 
