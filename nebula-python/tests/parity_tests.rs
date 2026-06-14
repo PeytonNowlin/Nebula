@@ -148,6 +148,21 @@ mission main {
 }
 
 #[test]
+fn parity_integer_arithmetic() {
+    assert_parity(
+        "int_arithmetic",
+        r#"
+mission main {
+  print(int_to_str(2 plus 3 times 4));
+  print(int_to_str(100 minus 7));
+  print(int_to_str(0 minus 5));
+  print(int_to_str(6 times 7 minus 2));
+}
+"#,
+    );
+}
+
+#[test]
 fn parity_collection_access() {
     assert_parity(
         "collection_access",

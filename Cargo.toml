@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "nebula-builtins",
     "nebula-ast",
     "nebula-syntax",
     "nebula-load",

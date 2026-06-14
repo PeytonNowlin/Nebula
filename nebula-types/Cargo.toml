@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
+nebula-builtins = { path = "../nebula-builtins" }
 miette.workspace = true
 thiserror.workspace = true
 

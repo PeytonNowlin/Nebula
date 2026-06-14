@@ -92,6 +92,32 @@ mission main {
 }
 
 #[test]
+fn integer_overflow_on_add_reports_neb_r007() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let big: Int = 9223372036854775807;
+  print(int_to_str(big plus 1));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R007"), "expected integer-overflow code, got: {err}");
+}
+
+#[test]
+fn integer_overflow_on_mul_reports_neb_r007() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let big: Int = 9223372036854775807;
+  print(int_to_str(big times 2));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R007"), "expected integer-overflow code, got: {err}");
+}
+
+#[test]
 fn missing_map_key_reports_neb_r006() {
     let err = run_expect_err(
         r#"

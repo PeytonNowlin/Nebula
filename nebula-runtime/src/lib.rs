@@ -8,6 +8,7 @@ use std::path::Path;
 
 use miette::Diagnostic;
 use nebula_ast::{BinaryOp, UnaryOp};
+use nebula_builtins::is_builtin;
 use nebula_ir::{IrExpr, IrProgram, IrStmt};
 use serde::Serialize;
 use thiserror::Error;
@@ -71,6 +72,10 @@ pub enum RuntimeError {
     #[error("NEB-R006 [runtime_error] key `{key}` not found in map")]
     #[diagnostic(code(nebula::key_not_found))]
     KeyNotFound { key: String },
+
+    #[error("NEB-R007 [runtime_error] integer overflow in `{op}`")]
+    #[diagnostic(code(nebula::integer_overflow))]
+    IntegerOverflow { op: String },
 }
 
 #[derive(Serialize)]
@@ -388,24 +393,6 @@ impl Runtime {
     }
 }
 
-fn is_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "print"
-            | "len"
-            | "push"
-            | "at"
-            | "get"
-            | "has"
-            | "str_to_int"
-            | "int_to_str"
-            | "str_to_float"
-            | "float_to_str"
-            | "int_to_float"
-            | "float_to_int"
-    )
-}
-
 /// Format an f64 the same way Python's `str(float)` does for the common cases:
 /// integral values keep a trailing `.0`, and non-finite values use lowercase
 /// `nan`/`inf`/`-inf`. Extreme magnitudes that Python renders in exponent form
@@ -636,6 +623,11 @@ fn eval_builtin(
                 }),
             }
         }
+        _ if is_builtin(name) => Err(RuntimeError::Error {
+            message: format!(
+                "builtin `{name}` is listed in builtins.toml but has no runtime handler"
+            ),
+        }),
         _ => Err(RuntimeError::Error {
             message: format!("unknown builtin `{name}`"),
         }),
@@ -645,7 +637,13 @@ fn eval_builtin(
 fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
     match op {
         BinaryOp::Plus => match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            // Integer arithmetic is checked: overflow is a deterministic error
+            // (NEB-R007), never a silent wrap, so the interpreter and the
+            // arbitrary-precision Python backend cannot diverge.
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_add(b)
+                .map(Value::Int)
+                .ok_or(RuntimeError::IntegerOverflow { op: "plus".into() }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Str(mut a), Value::Str(b)) => {
                 a.push_str(&b);
@@ -656,14 +654,20 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
             }),
         },
         BinaryOp::Minus => match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_sub(b)
+                .map(Value::Int)
+                .ok_or(RuntimeError::IntegerOverflow { op: "minus".into() }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid minus operands".into(),
             }),
         },
         BinaryOp::Times => match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_mul(b)
+                .map(Value::Int)
+                .ok_or(RuntimeError::IntegerOverflow { op: "times".into() }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid times operands".into(),
@@ -672,8 +676,12 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
         BinaryOp::Div => match (l, r) {
             (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
             // Integer div truncates toward zero (C-style); the Python backend
-            // mirrors this in `nebula_div`.
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+            // mirrors this in `nebula_div`. `checked_div` also traps the lone
+            // overflowing case, i64::MIN / -1.
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_div(b)
+                .map(Value::Int)
+                .ok_or(RuntimeError::IntegerOverflow { op: "div".into() }),
             (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
             _ => Err(RuntimeError::Error {
@@ -682,7 +690,10 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
         },
         BinaryOp::Mod => match (l, r) {
             (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_rem(b)
+                .map(Value::Int)
+                .ok_or(RuntimeError::IntegerOverflow { op: "mod".into() }),
             (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
             // f64 `%` keeps the sign of the dividend, matching Python math.fmod.
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),

@@ -226,7 +226,7 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 
 ### Numeric semantics
 
-Arithmetic and ordering require **both operands to share a numeric type** — both `Int` or both `Float`. There is no implicit coercion; convert with `int_to_float` / `float_to_int`. Integer `div`/`mod` truncate toward zero (the remainder's sign follows the dividend). `eq`/`ne` compare deeply, including lists, maps, options, and structs. `len` on a string counts Unicode code points. The interpreter and the Python backend produce identical results for all of these (enforced by the parity test suite).
+Arithmetic and ordering require **both operands to share a numeric type** — both `Int` or both `Float`. There is no implicit coercion; convert with `int_to_float` / `float_to_int`. Integer `div`/`mod` truncate toward zero (the remainder's sign follows the dividend). `Int` is 64-bit with **checked** arithmetic — overflow raises `NEB-R007` rather than wrapping or widening to a bignum. `eq`/`ne` compare deeply, including lists, maps, options, and structs. `len` on a string counts Unicode code points. The interpreter and the Python backend produce identical results for all of these (enforced by the parity test suite).
 
 ### `return` and `emit`
 

@@ -154,6 +154,7 @@ mission main {
 - `if`, `while`, and `telemetry` bodies use `end`-delimited blocks only; brace blocks are rejected (`NEB-S005`).
 - `plus` is additionally defined on `Str` (concatenation) when both operands are `Str`.
 - Integer `div` **truncates toward zero** and integer `mod` returns a remainder whose **sign follows the dividend** (C/Rust semantics, not Python floor division). `(0 minus 7) div 2` is `-3`; `(0 minus 7) mod 2` is `-1`.
+- `Int` is a 64-bit signed integer with **checked** arithmetic: any operation whose result falls outside `[-2^63, 2^63-1]` (including `i64::MIN div -1`) raises `NEB-R007` rather than wrapping or widening. Both backends trap identically — the interpreter never wraps and the Python backend never silently promotes to a bignum.
 - Float `div` is true division; float `mod` follows the dividend's sign (`fmod`). Float division/modulo by `0.0` also raises `NEB-R004`.
 
 ### 7.2 Equality and length

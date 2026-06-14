@@ -1,0 +1,11 @@
+[package]
+name = "nebula-builtins"
+version.workspace = true
+edition.workspace = true
+description = "Canonical builtin manifest for Nebula backends"
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+

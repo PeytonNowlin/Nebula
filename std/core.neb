@@ -1,4 +1,5 @@
 -- Nebula standard library: core builtins
+-- Canonical signatures: nebula-builtins/builtins.toml
 -- Provided by the runtime (no import needed):
 --   print(value: Str) -> Void
 --   len(value: List<T> or Map<K,V> or Str) -> Int  -- string length is in code points
@@ -14,4 +15,5 @@
 --   float_to_int(f: Float) -> Int             -- truncates toward zero
 --
 -- Numeric ops require matching operand types (both Int or both Float); there is
--- no implicit Int/Float coercion. Integer div/mod truncate toward zero.
+-- no implicit Int/Float coercion. Integer div/mod truncate toward zero. Int is
+-- 64-bit with checked arithmetic: overflow raises NEB-R007 (never wraps).

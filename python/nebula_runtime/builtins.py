@@ -14,9 +14,25 @@ __all__ = [
     "nebula_float_to_str",
     "nebula_int_to_float",
     "nebula_float_to_int",
+    "nebula_add",
+    "nebula_sub",
+    "nebula_mul",
     "nebula_div",
     "nebula_mod",
 ]
+
+_I64_MIN = -(2**63)
+_I64_MAX = 2**63 - 1
+
+
+def _check_i64(value: int, op: str) -> int:
+    # Nebula's Int is 64-bit; trap overflow as NEB-R007 to match the Rust
+    # interpreter instead of silently producing a Python bignum.
+    if value < _I64_MIN or value > _I64_MAX:
+        from nebula_runtime.errors import NebulaIntegerOverflow
+
+        raise NebulaIntegerOverflow(op)
+    return value
 
 
 def nebula_print(value) -> None:
@@ -122,6 +138,24 @@ def _is_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def nebula_add(left, right):
+    if _is_int(left) and _is_int(right):
+        return _check_i64(left + right, "plus")
+    return left + right  # float addition or string concatenation
+
+
+def nebula_sub(left, right):
+    if _is_int(left) and _is_int(right):
+        return _check_i64(left - right, "minus")
+    return left - right
+
+
+def nebula_mul(left, right):
+    if _is_int(left) and _is_int(right):
+        return _check_i64(left * right, "times")
+    return left * right
+
+
 def nebula_div(left, right):
     if right == 0:
         from nebula_runtime.errors import NebulaDivideByZero
@@ -131,7 +165,8 @@ def nebula_div(left, right):
         # Truncate toward zero to match the Rust interpreter (NEB integer `div`
         # is C-style, not Python floor division).
         q = abs(left) // abs(right)
-        return -q if (left < 0) != (right < 0) else q
+        q = -q if (left < 0) != (right < 0) else q
+        return _check_i64(q, "div")  # traps i64::MIN / -1
     return left / right
 
 

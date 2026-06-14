@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use nebula_ast::{BinaryOp, UnaryOp};
+use nebula_builtins::manifest;
 use nebula_ir::{IrExpr, IrFunction, IrProgram, IrStmt};
 use nebula_load::LoadedProgram;
 
@@ -11,21 +12,6 @@ use crate::layout::{
     common_base, python_import_from, relative_py_path,
     sorted_modules,
 };
-
-const BUILTINS: &[&str] = &[
-    "print",
-    "len",
-    "push",
-    "at",
-    "get",
-    "has",
-    "str_to_int",
-    "int_to_str",
-    "str_to_float",
-    "float_to_str",
-    "int_to_float",
-    "float_to_int",
-];
 
 pub struct EmitOptions {
     pub out_dir: PathBuf,
@@ -458,9 +444,12 @@ impl<'a> ModuleEmitter<'a> {
                 let l = self.emit_expr(left)?;
                 let r = self.emit_expr(right)?;
                 match op {
-                    BinaryOp::Plus => format!("({l} + {r})"),
-                    BinaryOp::Minus => format!("({l} - {r})"),
-                    BinaryOp::Times => format!("({l} * {r})"),
+                    // Route arithmetic through shim helpers so integer overflow
+                    // traps as NEB-R007 (matching the interpreter) instead of
+                    // silently growing into a Python bignum.
+                    BinaryOp::Plus => format!("nebula_add({l}, {r})"),
+                    BinaryOp::Minus => format!("nebula_sub({l}, {r})"),
+                    BinaryOp::Times => format!("nebula_mul({l}, {r})"),
                     BinaryOp::Div => format!("nebula_div({l}, {r})"),
                     BinaryOp::Mod => format!("nebula_mod({l}, {r})"),
                     BinaryOp::Eq => format!("({l} == {r})"),
@@ -478,9 +467,8 @@ impl<'a> ModuleEmitter<'a> {
                 let rendered_args: Result<Vec<_>, _> =
                     args.iter().map(|arg| self.emit_expr(arg)).collect();
                 let rendered_args = rendered_args?;
-                if is_builtin(name) {
-                    // Builtins map 1:1 to `nebula_<name>` functions in the shim.
-                    format!("nebula_{name}({})", rendered_args.join(", "))
+                if let Some(builtin) = manifest().get(name) {
+                    format!("{}({})", builtin.python_name, rendered_args.join(", "))
                 } else {
                     format!("{callee}({})", rendered_args.join(", "))
                 }
@@ -567,9 +555,7 @@ fn emit_module(
     ModuleEmitter::emit_module(loaded, ir, module_path, is_entry, base, opts)
 }
 
-fn is_builtin(name: &str) -> bool {
-    BUILTINS.contains(&name)
-}
+
 
 /// Render a float literal so Python parses it as a `float`, never an `int`.
 /// `7.0_f64.to_string()` is `"7"`, which would become a Python int and corrupt

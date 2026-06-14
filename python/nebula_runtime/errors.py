@@ -27,3 +27,12 @@ class NebulaKeyError(NebulaRuntimeError):
 
     def __str__(self) -> str:
         return f"NEB-R006 [runtime_error] key `{self.key}` not found in map"
+
+
+class NebulaIntegerOverflow(NebulaRuntimeError):
+    def __init__(self, op: str) -> None:
+        super().__init__(op)
+        self.op = op
+
+    def __str__(self) -> str:
+        return f"NEB-R007 [runtime_error] integer overflow in `{self.op}`"

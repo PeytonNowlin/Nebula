@@ -1,0 +1,61 @@
+# Canonical Nebula builtin surface.
+# Consumed by nebula-types (signatures), nebula-runtime (dispatch names),
+# nebula-python (emit), and validated against python/nebula_runtime/builtins.py.
+
+[[builtin]]
+name = "print"
+params = [{ name = "value", type = "Str" }]
+returns = "Void"
+
+[[builtin]]
+name = "len"
+returns = "Int"
+checker = "len"
+
+[[builtin]]
+name = "push"
+returns = "Void"
+checker = "push"
+
+[[builtin]]
+name = "at"
+checker = "at"
+
+[[builtin]]
+name = "get"
+checker = "get"
+
+[[builtin]]
+name = "has"
+returns = "Bool"
+checker = "has"
+
+[[builtin]]
+name = "str_to_int"
+params = [{ name = "s", type = "Str" }]
+returns = "Int"
+
+[[builtin]]
+name = "int_to_str"
+params = [{ name = "n", type = "Int" }]
+returns = "Str"
+
+[[builtin]]
+name = "str_to_float"
+params = [{ name = "s", type = "Str" }]
+returns = "Float"
+
+[[builtin]]
+name = "float_to_str"
+params = [{ name = "f", type = "Float" }]
+returns = "Str"
+
+[[builtin]]
+name = "int_to_float"
+params = [{ name = "n", type = "Int" }]
+returns = "Float"
+
+[[builtin]]
+name = "float_to_int"
+params = [{ name = "f", type = "Float" }]
+returns = "Int"
