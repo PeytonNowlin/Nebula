@@ -1,3 +1,4 @@
+mod report;
 mod resolve;
 
 use std::collections::HashMap;
@@ -6,47 +7,73 @@ use miette::Diagnostic;
 use nebula_ast::*;
 use thiserror::Error;
 
+pub use report::{report_with_source, TypecheckErrors};
 use resolve::{qualify, resolve_symbol};
 
 #[derive(Debug, Clone, Error, Diagnostic)]
 pub enum TypeError {
     #[error("NEB-T001 [type_error] undefined identifier `{name}`")]
     #[diagnostic(code(nebula::undefined_ident))]
-    UndefinedIdent { name: String, span: Span },
+    UndefinedIdent {
+        name: String,
+        #[label("undefined identifier")]
+        span: Span,
+    },
 
     #[error("NEB-T002 [type_error] type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(nebula::type_mismatch))]
     Mismatch {
         expected: String,
         found: String,
+        #[label("type mismatch")]
         span: Span,
     },
 
     #[error("NEB-T003 [type_error] cannot assign to immutable binding `{name}`")]
     #[diagnostic(code(nebula::immutable_assign))]
-    ImmutableAssign { name: String, span: Span },
+    ImmutableAssign {
+        name: String,
+        #[label("immutable binding")]
+        span: Span,
+    },
 
     #[error("NEB-T004 [type_error] undefined function `{name}`")]
     #[diagnostic(code(nebula::undefined_fn))]
-    UndefinedFn { name: String, span: Span },
+    UndefinedFn {
+        name: String,
+        #[label("undefined function")]
+        span: Span,
+    },
 
     #[error("NEB-T005 [type_error] undefined struct `{name}`")]
     #[diagnostic(code(nebula::undefined_struct))]
-    UndefinedStruct { name: String, span: Span },
+    UndefinedStruct {
+        name: String,
+        #[label("undefined struct")]
+        span: Span,
+    },
 
     #[error("NEB-T006 [type_error] undefined probe `{name}`")]
     #[diagnostic(code(nebula::undefined_probe))]
-    UndefinedProbe { name: String, span: Span },
+    UndefinedProbe {
+        name: String,
+        #[label("undefined probe")]
+        span: Span,
+    },
 
     #[error("NEB-T007 [type_error] missing mission entry point `main`")]
     #[diagnostic(code(nebula::missing_main))]
-    MissingMain { span: Span },
+    MissingMain {
+        #[label("program root")]
+        span: Span,
+    },
 
     #[error("NEB-T008 [type_error] unknown field `{field}` on struct `{struct_name}`")]
     #[diagnostic(code(nebula::unknown_field))]
     UnknownField {
         struct_name: String,
         field: String,
+        #[label("unknown field")]
         span: Span,
     },
 
@@ -55,6 +82,7 @@ pub enum TypeError {
     DuplicateSymbol {
         kind: String,
         name: String,
+        #[label("duplicate symbol")]
         span: Span,
     },
 }
@@ -94,7 +122,7 @@ pub struct ProbeInfo {
     pub return_type: Type,
 }
 
-pub fn typecheck(program: &Program) -> Result<TypedProgram, Vec<TypeError>> {
+pub fn typecheck(program: &Program) -> Result<TypedProgram, TypecheckErrors> {
     let mut checker = Checker::new();
     let mut errors = Vec::new();
 
@@ -107,7 +135,7 @@ pub fn typecheck(program: &Program) -> Result<TypedProgram, Vec<TypeError>> {
     }
 
     if !errors.is_empty() {
-        return Err(errors);
+        return Err(TypecheckErrors::new(errors));
     }
 
     for item in &program.items {
@@ -123,7 +151,7 @@ pub fn typecheck(program: &Program) -> Result<TypedProgram, Vec<TypeError>> {
             has_main: checker.has_main,
         })
     } else {
-        Err(errors)
+        Err(TypecheckErrors::new(errors))
     }
 }
 

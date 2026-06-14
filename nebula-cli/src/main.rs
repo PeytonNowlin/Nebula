@@ -9,7 +9,7 @@ use nebula_ir::lower;
 use nebula_load::load_program;
 use nebula_runtime::Runtime;
 use nebula_syntax::parse;
-use nebula_types::typecheck;
+use nebula_types::{report_with_source, typecheck};
 
 #[derive(Parser)]
 #[command(name = "nebula", version, about = "Nebula — agent-native programming language")]
@@ -38,6 +38,12 @@ enum Commands {
     },
 }
 
+struct CompiledSource {
+    path: PathBuf,
+    source: String,
+    program: nebula_ast::Program,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
@@ -59,28 +65,29 @@ fn read_file(path: &PathBuf) -> miette::Result<String> {
     fs::read_to_string(path).into_diagnostic()
 }
 
-fn compile_pipeline(path: &PathBuf) -> miette::Result<nebula_ast::Program> {
+fn compile_pipeline(path: &PathBuf) -> miette::Result<CompiledSource> {
     let source = read_file(path)?;
-    let program = parse(&source).map_err(|e| Report::new(e))?;
-    load_program(path, program).map_err(|e| Report::new(e))
+    let program = parse(&source).map_err(|err| report_with_source(path, &source, err))?;
+    let program =
+        load_program(path, program).map_err(|err| report_with_source(path, &source, err))?;
+    Ok(CompiledSource {
+        path: path.clone(),
+        source,
+        program,
+    })
 }
 
 fn check(path: &PathBuf) -> miette::Result<()> {
-    let program = compile_pipeline(path)?;
-    typecheck(&program).map_err(|errors| {
-        let mut report = Report::new(errors[0].clone());
-        for err in &errors[1..] {
-            report = report.wrap_err(err.to_string());
-        }
-        report
-    })?;
+    let compiled = compile_pipeline(path)?;
+    typecheck(&compiled.program)
+        .map_err(|errors| report_with_source(&compiled.path, &compiled.source, errors))?;
     println!("ok: {}", path.display());
     Ok(())
 }
 
 fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
     let source = read_file(path)?;
-    let formatted = format(&source).map_err(|e| Report::new(e))?;
+    let formatted = format(&source).map_err(|err| report_with_source(path, &source, err))?;
     if write {
         fs::write(path, &formatted).into_diagnostic()?;
     } else {
@@ -90,21 +97,16 @@ fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
 }
 
 fn run(path: &PathBuf, telemetry: Option<PathBuf>) -> miette::Result<()> {
-    let program = compile_pipeline(path)?;
-    let typed = typecheck(&program).map_err(|errors| {
-        let mut report = Report::new(errors[0].clone());
-        for err in &errors[1..] {
-            report = report.wrap_err(err.to_string());
-        }
-        report
-    })?;
-    let ir = lower(&typed).map_err(|e| Report::new(e))?;
+    let compiled = compile_pipeline(path)?;
+    let typed = typecheck(&compiled.program)
+        .map_err(|errors| report_with_source(&compiled.path, &compiled.source, errors))?;
+    let ir = lower(&typed).map_err(Report::new)?;
 
     let mut runtime = Runtime::new(&ir);
     if let Some(tel_path) = telemetry {
         runtime = runtime.with_telemetry(tel_path.to_string_lossy().into_owned());
     }
 
-    runtime.run(&ir).map_err(|e| Report::new(e))?;
+    runtime.run(&ir).map_err(Report::new)?;
     Ok(())
 }

@@ -25,7 +25,7 @@ mission main {
 "#;
     let program = parse(src).expect("parse");
     let errors = typecheck(&program).expect_err("should fail typecheck");
-    assert_golden("errors", "type_mismatch", &join_errors(&errors));
+    assert_golden("errors", "type_mismatch", &join_errors(errors.errors()));
 }
 
 #[test]
@@ -39,7 +39,7 @@ mission main {}
 "#;
     let program = parse(src).expect("parse");
     let errors = typecheck(&program).expect_err("should fail typecheck");
-    assert_golden("errors", "duplicate_function", &join_errors(&errors));
+    assert_golden("errors", "duplicate_function", &join_errors(errors.errors()));
 }
 
 #[test]
@@ -54,5 +54,5 @@ mission main {
 "#;
     let program = parse(src).expect("parse");
     let errors = typecheck(&program).expect_err("should fail typecheck");
-    assert_golden("errors", "undefined_fn", &join_errors(&errors));
+    assert_golden("errors", "undefined_fn", &join_errors(errors.errors()));
 }
