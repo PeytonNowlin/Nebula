@@ -1,6 +1,6 @@
 use std::error::Error as StdError;
 
-use nebula_ast::{DiagnosticExtractor, DiagnosticJson};
+use nebula_ast::{DiagnosticExtractor, DiagnosticJson, NebError};
 
 use crate::{LexError, ParseError};
 
