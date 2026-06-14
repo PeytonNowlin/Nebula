@@ -3,3 +3,11 @@
 .DS_Store
 telemetry.jsonl
 /.omc
+
+# Python build artifacts
+/dist
+/dist_pkg
+/shared
+**/*.egg-info/
+python/build/
+__pycache__/

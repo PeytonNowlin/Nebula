@@ -32,11 +32,7 @@ fn capture_interpreter_stdout(file: &PathBuf, probe_manifest: Option<&PathBuf>) 
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn compile_and_run_python(
-    file: &Path,
-    out_dir: &Path,
-    probe_manifest: Option<PathBuf>,
-) -> String {
+fn compile_and_run_python(file: &Path, out_dir: &Path, probe_manifest: Option<PathBuf>) -> String {
     let source = fs::read_to_string(file).expect("read source");
     let program = parse(&source).expect("parse");
     let loaded = load_workspace(file, program).expect("load");

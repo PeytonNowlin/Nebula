@@ -1,13 +1,12 @@
 name: Publish nebula-runtime
 
-# Publishes the python/ package (nebula-runtime) to PyPI. Runs when a GitHub
-# Release is published, or on manual dispatch. Uses PyPI Trusted Publishing
-# (OIDC) — no API token required, but the PyPI project must first be configured
-# with this repo + workflow as a trusted publisher:
-#   https://docs.pypi.org/trusted-publishers/
+# Publishes the python/ package (nebula-runtime) to PyPI via manual dispatch.
+# Uses PyPI Trusted Publishing (OIDC) — no API token required, but the PyPI
+# project must first be configured with this repo + workflow as a trusted
+# publisher: https://docs.pypi.org/trusted-publishers/
+# (Run with: gh workflow run publish-runtime.yml. The 0.1.0 release was published
+# manually with an API token before trusted publishing was set up.)
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 jobs:
