@@ -8,9 +8,6 @@ name = "nebula"
 path = "src/main.rs"
 
 [dependencies]
-nebula-ast = { path = "../nebula-ast" }
-nebula-ir = { path = "../nebula-ir" }
-nebula-python = { path = "../nebula-python" }
 nebula-diagnostics = { path = "../nebula-diagnostics" }
 nebula-host = { path = "../nebula-host" }
 clap.workspace = true

@@ -78,3 +78,59 @@ pub enum TypeError {
         span: Span,
     },
 }
+
+impl nebula_ast::NebError for TypeError {
+    fn neb_code(&self) -> &'static str {
+        match self {
+            TypeError::UndefinedIdent { .. } => "NEB-T001",
+            TypeError::Mismatch { .. } => "NEB-T002",
+            TypeError::ImmutableAssign { .. } => "NEB-T003",
+            TypeError::UndefinedFn { .. } => "NEB-T004",
+            TypeError::UndefinedStruct { .. } => "NEB-T005",
+            TypeError::UndefinedProbe { .. } => "NEB-T006",
+            TypeError::MissingMain { .. } => "NEB-T007",
+            TypeError::UnknownField { .. } => "NEB-T008",
+            TypeError::DuplicateSymbol { .. } => "NEB-T009",
+        }
+    }
+
+    fn neb_message(&self) -> String {
+        match self {
+            TypeError::UndefinedIdent { name, .. } => {
+                format!("undefined identifier `{name}`")
+            }
+            TypeError::Mismatch { expected, found, .. } => {
+                format!("type mismatch: expected {expected}, found {found}")
+            }
+            TypeError::ImmutableAssign { name, .. } => {
+                format!("cannot assign to immutable binding `{name}`")
+            }
+            TypeError::UndefinedFn { name, .. } => format!("undefined function `{name}`"),
+            TypeError::UndefinedStruct { name, .. } => format!("undefined struct `{name}`"),
+            TypeError::UndefinedProbe { name, .. } => format!("undefined probe `{name}`"),
+            TypeError::MissingMain { .. } => "missing mission entry point `main`".to_string(),
+            TypeError::UnknownField {
+                struct_name,
+                field,
+                ..
+            } => format!("unknown field `{field}` on struct `{struct_name}`"),
+            TypeError::DuplicateSymbol { kind, name, .. } => {
+                format!("duplicate {kind} `{name}`")
+            }
+        }
+    }
+
+    fn neb_span(&self) -> Option<Span> {
+        Some(match self {
+            TypeError::UndefinedIdent { span, .. }
+            | TypeError::Mismatch { span, .. }
+            | TypeError::ImmutableAssign { span, .. }
+            | TypeError::UndefinedFn { span, .. }
+            | TypeError::UndefinedStruct { span, .. }
+            | TypeError::UndefinedProbe { span, .. }
+            | TypeError::MissingMain { span }
+            | TypeError::UnknownField { span, .. }
+            | TypeError::DuplicateSymbol { span, .. } => span.clone(),
+        })
+    }
+}

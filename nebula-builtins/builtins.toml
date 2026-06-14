@@ -31,6 +31,11 @@ returns = "Bool"
 checker = "has"
 
 [[builtin]]
+name = "insert"
+returns = "Void"
+checker = "insert"
+
+[[builtin]]
 name = "str_to_int"
 params = [{ name = "s", type = "Str" }]
 returns = "Int"

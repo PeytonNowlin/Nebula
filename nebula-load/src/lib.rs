@@ -18,7 +18,7 @@ pub enum LoadError {
     Circular { path: PathBuf, span: Span },
 
     #[error("NEB-L003 [load_error] duplicate {kind} `{name}` defined in {existing} and {new}")]
-    #[diagnostic(code(nebula::duplicate_symbol))]
+    #[diagnostic(code(nebula::import_duplicate_symbol))]
     Duplicate {
         kind: String,
         name: String,
@@ -43,6 +43,57 @@ pub enum LoadError {
         source: ParseError,
         span: Span,
     },
+}
+
+impl nebula_ast::NebError for LoadError {
+    fn neb_code(&self) -> &'static str {
+        match self {
+            LoadError::NotFound { .. } => "NEB-L001",
+            LoadError::Circular { .. } => "NEB-L002",
+            LoadError::Duplicate { .. } => "NEB-L003",
+            LoadError::LibraryHasMission { .. } => "NEB-L004",
+            LoadError::Read { .. } => "NEB-L005",
+            LoadError::Parse { source, .. } => source.neb_code(),
+        }
+    }
+
+    fn neb_message(&self) -> String {
+        match self {
+            LoadError::NotFound { path, .. } => {
+                format!("import file not found: {}", path.display())
+            }
+            LoadError::Circular { path, .. } => format!("circular import: {}", path.display()),
+            LoadError::Duplicate {
+                kind,
+                name,
+                existing,
+                new,
+                ..
+            } => format!(
+                "duplicate {kind} `{name}` defined in {} and {}",
+                existing.display(),
+                new.display()
+            ),
+            LoadError::LibraryHasMission { path, .. } => {
+                format!("imported file `{}` must not define a mission", path.display())
+            }
+            LoadError::Read { path, message, .. } => {
+                format!("failed to read `{}`: {message}", path.display())
+            }
+            LoadError::Parse { source, .. } => source.neb_message(),
+        }
+    }
+
+    fn neb_span(&self) -> Option<Span> {
+        match self {
+            LoadError::NotFound { span, .. }
+            | LoadError::Circular { span, .. }
+            | LoadError::Duplicate { span, .. }
+            | LoadError::LibraryHasMission { span, .. }
+            | LoadError::Read { span, .. }
+            | LoadError::Parse { span, .. } => Some(span.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Default)]

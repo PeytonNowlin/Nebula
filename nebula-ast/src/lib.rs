@@ -1,4 +1,11 @@
+mod diagnostic_extract;
+mod diagnostic_json;
 mod json;
+mod neb_error;
+
+pub use diagnostic_extract::{try_extract_from_cause, DiagnosticExtractor, ExtractFn};
+pub use diagnostic_json::{make_span, DiagnosticJson, DiagnosticSpan};
+pub use neb_error::{neb_code_from_miette, NebError};
 
 pub type Span = std::ops::Range<usize>;
 
@@ -229,18 +236,3 @@ impl Type {
     }
 }
 
-pub trait SpanExt {
-    fn span(&self) -> Span;
-}
-
-impl<T: SpanExt> SpanExt for Spanned<T> {
-    fn span(&self) -> Span {
-        self.span.clone()
-    }
-}
-
-impl SpanExt for Expr {
-    fn span(&self) -> Span {
-        0..0
-    }
-}

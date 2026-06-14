@@ -89,32 +89,32 @@ impl<'a> Pipeline<'a> {
             ir,
         })
     }
+}
 
-    pub fn format(write: bool, path: &Path) -> Result<FormatResult, Report> {
-        let workspace = Self::file(path).workspace()?;
-        let entry_canonical = fs::canonicalize(path).into_diagnostic()?;
+pub fn format_entry(write: bool, path: &Path) -> Result<FormatResult, Report> {
+    let workspace = Pipeline::file(path).workspace()?;
+    let entry_canonical = fs::canonicalize(path).into_diagnostic()?;
 
-        if write {
-            for (module_path, module_program) in &workspace.loaded.modules {
-                let formatted = format_program(module_program);
-                fs::write(module_path, &formatted).into_diagnostic()?;
-            }
-            Ok(FormatResult {
-                modules_written: workspace.loaded.modules.len(),
-                entry_display: None,
-            })
-        } else {
-            let formatted = workspace
-                .loaded
-                .modules
-                .get(&entry_canonical)
-                .map(format_program)
-                .unwrap_or_else(|| format_program(&workspace.loaded.merged));
-            Ok(FormatResult {
-                modules_written: 0,
-                entry_display: Some(formatted),
-            })
+    if write {
+        for (module_path, module_program) in &workspace.loaded.modules {
+            let formatted = format_program(module_program);
+            fs::write(module_path, &formatted).into_diagnostic()?;
         }
+        Ok(FormatResult {
+            modules_written: workspace.loaded.modules.len(),
+            entry_display: None,
+        })
+    } else {
+        let formatted = workspace
+            .loaded
+            .modules
+            .get(&entry_canonical)
+            .map(format_program)
+            .unwrap_or_else(|| format_program(&workspace.loaded.merged));
+        Ok(FormatResult {
+            modules_written: 0,
+            entry_display: Some(formatted),
+        })
     }
 }
 

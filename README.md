@@ -217,6 +217,7 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 | `at` | `fn(list: List<T>, index: Int) -> T` | 0-based element access; out-of-range fails `NEB-R005` |
 | `get` | `fn(map: Map<K,V>, key: K) -> V` | Map lookup; missing key fails `NEB-R006` |
 | `has` | `fn(map: Map<K,V>, key: K) -> Bool` | Map key presence test |
+| `insert` | `fn(map: Map<K,V>, key: K, value: V) -> Void` | Mutates a **map variable** in place; first arg must be an identifier |
 | `str_to_int` | `fn(s: Str) -> Int` | |
 | `int_to_str` | `fn(n: Int) -> Str` | |
 | `str_to_float` | `fn(s: Str) -> Float` | |

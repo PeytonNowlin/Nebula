@@ -12,6 +12,20 @@ pub struct IrError {
     pub message: String,
 }
 
+impl nebula_ast::NebError for IrError {
+    fn neb_code(&self) -> &'static str {
+        "NEB-R001"
+    }
+
+    fn neb_message(&self) -> String {
+        self.message.clone()
+    }
+
+    fn neb_span(&self) -> Option<nebula_ast::Span> {
+        None
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IrProgram {
     pub sectors: HashMap<String, IrSector>,

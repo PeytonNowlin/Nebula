@@ -36,6 +36,44 @@ pub enum ParseError {
     },
 }
 
+impl NebError for ParseError {
+    fn neb_code(&self) -> &'static str {
+        match self {
+            ParseError::Lex(err) => err.neb_code(),
+            ParseError::Unexpected { .. } => "NEB-S002",
+            ParseError::Eof { .. } => "NEB-S003",
+            ParseError::DeprecatedComparison { .. } => "NEB-S004",
+            ParseError::DeprecatedBraceBlock { .. } => "NEB-S005",
+        }
+    }
+
+    fn neb_message(&self) -> String {
+        match self {
+            ParseError::Lex(err) => err.neb_message(),
+            ParseError::Unexpected { expected, found, .. } => {
+                format!("unexpected token: expected {expected}, found {found}")
+            }
+            ParseError::Eof { .. } => "unexpected end of file".to_string(),
+            ParseError::DeprecatedComparison { canonical, found, .. } => {
+                format!("use `{canonical}` instead of `{found}`")
+            }
+            ParseError::DeprecatedBraceBlock { canonical, found, .. } => {
+                format!("use `{canonical}`-delimited block instead of `{found}`")
+            }
+        }
+    }
+
+    fn neb_span(&self) -> Option<Span> {
+        match self {
+            ParseError::Lex(err) => err.neb_span(),
+            ParseError::Unexpected { span, .. }
+            | ParseError::Eof { span }
+            | ParseError::DeprecatedComparison { span, .. }
+            | ParseError::DeprecatedBraceBlock { span, .. } => Some(span.clone()),
+        }
+    }
+}
+
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     let tokens = super::lexer::lex(source)?;
     let mut parser = Parser::new(tokens);

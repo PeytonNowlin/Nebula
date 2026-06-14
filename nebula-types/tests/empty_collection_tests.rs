@@ -152,6 +152,51 @@ mission main {
 }
 
 #[test]
+fn insert_typechecks_on_map_variable() {
+    let src = r#"
+mission main {
+  let mut m: Map<Str, Int> = {"a": 1};
+  insert(m, "b", 2);
+  print(int_to_str(len(m)));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("insert on a Map<Str,Int> variable should typecheck");
+}
+
+#[test]
+fn insert_rejects_mismatched_value_type() {
+    let src = r#"
+mission main {
+  let mut m: Map<Str, Int> = {"a": 1};
+  insert(m, "b", "two");
+  print(int_to_str(len(m)));
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(
+        typecheck(&program).is_err(),
+        "insert with a Str value into Map<Str,Int> should fail to typecheck"
+    );
+}
+
+#[test]
+fn insert_rejects_non_map() {
+    let src = r#"
+mission main {
+  let mut xs: List<Int> = [1];
+  insert(xs, 0, 2);
+  print(int_to_str(len(xs)));
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(
+        typecheck(&program).is_err(),
+        "insert on a List should fail to typecheck"
+    );
+}
+
+#[test]
 fn len_accepts_map() {
     let src = r#"
 mission main {

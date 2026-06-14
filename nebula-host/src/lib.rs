@@ -19,17 +19,20 @@ use std::path::Path;
 use miette::Report;
 use nebula_ast::Program;
 use nebula_diagnostics::diagnostics_from_report_with_source;
+use nebula_python::{emit_workspace, EmitOptions};
 use nebula_runtime::{list_probe_manifest, Runtime};
-use nebula_types::TypedProgram;
+use nebula_diagnostics::diagnostics_from_type_errors;
+use nebula_types::{typecheck, TypedProgram, TypecheckErrors};
 
 pub use nebula_ast::Program as AstProgram;
 pub use nebula_diagnostics::DiagnosticJson;
 pub use nebula_ir::IrProgram;
 pub use nebula_load::LoadedProgram;
 pub use nebula_runtime::Value as HostValue;
+pub use nebula_python::EmitResult;
 pub use nebula_runtime::{DeclaredProbe, McpServerReport, ProbeListReport};
 pub use pipeline::{
-    CompileArtifact, FormatResult, Pipeline, WorkspaceArtifact,
+    format_entry, CompileArtifact, FormatResult, Pipeline, PipelineInput, WorkspaceArtifact,
 };
 
 /// Reusable host session. Clone to share probe/telemetry configuration across calls.
@@ -123,21 +126,20 @@ impl Host {
         path: impl AsRef<Path>,
         write: bool,
     ) -> miette::Result<FormatResult> {
-        Pipeline::format(write, path.as_ref())
+        format_entry(write, path.as_ref())
     }
 
     /// Typecheck in-memory source. Returns structured diagnostics for agent loops.
     pub fn check_source(&self, source: &str) -> CheckResult {
-        adapt_check(
-            Pipeline::source(source, self.entry_label(None))
-                .typecheck()
-                .map(|_| ()),
-        )
+        self.check_workspace(Pipeline::source(
+            source,
+            self.entry_label(None),
+        ))
     }
 
     /// Typecheck a file on disk. Returns structured diagnostics for agent loops.
     pub fn check_file(&self, path: impl AsRef<Path>) -> CheckResult {
-        adapt_check(self.try_check_file(path))
+        self.check_workspace(Pipeline::file(path.as_ref()))
     }
 
     /// Typecheck a file on disk. Returns miette reports for CLI display.
@@ -149,12 +151,31 @@ impl Host {
 
     /// Execute in-memory source. Returns structured output for agent loops.
     pub fn run_source(&self, source: &str) -> RunResult {
-        adapt_run(self.try_run_source(source))
+        match self.compile_ir(Pipeline::source(
+            source,
+            self.entry_label(None),
+        )) {
+            Ok(ir) => adapt_run(self.execute_ir(ir)),
+            Err(CompileFailure::Typecheck {
+                entry,
+                source,
+                errors,
+            }) => RunResult::fail(diagnostics_from_type_errors(&entry, &source, &errors)),
+            Err(CompileFailure::Report(report)) => adapt_run(Err(report)),
+        }
     }
 
     /// Execute a file on disk. Returns structured output for agent loops.
     pub fn run_file(&self, path: impl AsRef<Path>) -> RunResult {
-        adapt_run(self.try_run_file(path))
+        match self.compile_ir(Pipeline::file(path.as_ref())) {
+            Ok(ir) => adapt_run(self.execute_ir(ir)),
+            Err(CompileFailure::Typecheck {
+                entry,
+                source,
+                errors,
+            }) => RunResult::fail(diagnostics_from_type_errors(&entry, &source, &errors)),
+            Err(CompileFailure::Report(report)) => adapt_run(Err(report)),
+        }
     }
 
     /// Execute in-memory source. Returns miette reports for CLI display.
@@ -169,6 +190,27 @@ impl Host {
         self.execute_ir(compiled.ir)
     }
 
+    /// Compile a workspace entry file and emit Python modules to `out_dir`.
+    pub fn try_emit_python(
+        &self,
+        path: impl AsRef<Path>,
+        out_dir: impl AsRef<Path>,
+    ) -> miette::Result<EmitResult> {
+        let path = path.as_ref();
+        let compiled = self.try_compile_file(path)?;
+        emit_workspace(
+            &compiled.loaded,
+            &compiled.ir,
+            &EmitOptions {
+                out_dir: out_dir.as_ref().to_path_buf(),
+                entry_path: path.to_path_buf(),
+                probe_manifest: self.config.probe_manifest.clone(),
+                telemetry_path: self.config.telemetry_path.clone(),
+            },
+        )
+        .map_err(Report::new)
+    }
+
     /// List probe bindings from a manifest. Set `discover_mcp` to query live MCP servers via `tools/list`.
     pub fn list_probes(
         &self,
@@ -176,6 +218,38 @@ impl Host {
         discover_mcp: bool,
     ) -> miette::Result<ProbeListReport> {
         list_probe_manifest(manifest.as_ref(), discover_mcp).map_err(Report::new)
+    }
+
+    fn check_workspace(&self, pipeline: Pipeline<'_>) -> CheckResult {
+        let workspace = match pipeline.workspace() {
+            Ok(workspace) => workspace,
+            Err(report) => return CheckResult::fail(diagnostics_from_report(&report)),
+        };
+        match typecheck(&workspace.loaded.merged) {
+            Ok(_) => CheckResult::ok(),
+            Err(errors) => CheckResult::fail(diagnostics_from_type_errors(
+                &workspace.entry,
+                &workspace.source,
+                &errors,
+            )),
+        }
+    }
+
+    fn compile_ir(&self, pipeline: Pipeline<'_>) -> Result<IrProgram, CompileFailure> {
+        let workspace = pipeline.workspace().map_err(CompileFailure::Report)?;
+        let typed = match typecheck(&workspace.loaded.merged) {
+            Ok(typed) => typed,
+            Err(errors) => {
+                return Err(CompileFailure::Typecheck {
+                    entry: workspace.entry,
+                    source: workspace.source,
+                    errors,
+                });
+            }
+        };
+        nebula_ir::lower(&typed)
+            .map_err(Report::new)
+            .map_err(CompileFailure::Report)
     }
 
     fn entry_label<'a>(&'a self, override_label: Option<&'a str>) -> &'a str {
@@ -220,11 +294,7 @@ impl CheckResult {
 }
 
 impl RunResult {
-    pub fn fail(diagnostics: Vec<DiagnosticJson>) -> Vec<DiagnosticJson> {
-        diagnostics
-    }
-
-    pub fn from_err(diagnostics: Vec<DiagnosticJson>) -> Self {
+    pub fn fail(diagnostics: Vec<DiagnosticJson>) -> Self {
         Self {
             ok: false,
             diagnostics,
@@ -234,11 +304,13 @@ impl RunResult {
     }
 }
 
-fn adapt_check(result: Result<impl Sized, Report>) -> CheckResult {
-    match result {
-        Ok(()) => CheckResult::ok(),
-        Err(report) => CheckResult::fail(diagnostics_from_report(&report)),
-    }
+enum CompileFailure {
+    Report(Report),
+    Typecheck {
+        entry: String,
+        source: String,
+        errors: TypecheckErrors,
+    },
 }
 
 fn adapt_run(result: Result<RunOutput, Report>) -> RunResult {
@@ -249,7 +321,7 @@ fn adapt_run(result: Result<RunOutput, Report>) -> RunResult {
             printed: output.printed,
             return_value: output.return_value,
         },
-        Err(report) => RunResult::from_err(diagnostics_from_report(&report)),
+        Err(report) => RunResult::fail(diagnostics_from_report(&report)),
     }
 }
 

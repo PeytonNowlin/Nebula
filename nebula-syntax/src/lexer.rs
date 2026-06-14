@@ -173,6 +173,20 @@ pub struct LexError {
     pub span: std::ops::Range<usize>,
 }
 
+impl nebula_ast::NebError for LexError {
+    fn neb_code(&self) -> &'static str {
+        "NEB-S001"
+    }
+
+    fn neb_message(&self) -> String {
+        "unexpected character".to_string()
+    }
+
+    fn neb_span(&self) -> Option<nebula_ast::Span> {
+        Some(self.span.clone())
+    }
+}
+
 pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
     let mut lexer = TokenKind::lexer(source);
     let mut tokens = Vec::new();

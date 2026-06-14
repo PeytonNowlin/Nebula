@@ -7,6 +7,7 @@
 --   at(list: List<T>, index: Int) -> T       -- 0-based; out-of-range fails NEB-R005
 --   get(map: Map<K,V>, key: K) -> V          -- missing key fails NEB-R006
 --   has(map: Map<K,V>, key: K) -> Bool
+--   insert(map: Map<K,V>, key: K, value: V) -> Void  -- first arg must be a map variable
 --   str_to_int(s: Str) -> Int
 --   int_to_str(n: Int) -> Str
 --   str_to_float(s: Str) -> Float

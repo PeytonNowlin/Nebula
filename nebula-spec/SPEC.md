@@ -224,6 +224,7 @@ Provided by the runtime standard library:
 - `at(list: List<T>, index: Int) -> T` (0-based; out-of-range or negative index fails with `NEB-R005`)
 - `get(map: Map<K, V>, key: K) -> V` (missing key fails with `NEB-R006`)
 - `has(map: Map<K, V>, key: K) -> Bool`
+- `insert(map: Map<K, V>, key: K, value: V) -> Void` (mutates a **map variable** in place; first argument must be an identifier)
 - `str_to_int(s: Str) -> Int`
 - `int_to_str(n: Int) -> Str`
 - `str_to_float(s: Str) -> Float`

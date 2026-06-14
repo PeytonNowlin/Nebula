@@ -3,11 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Report};
-use nebula_ast::Program;
 use nebula_diagnostics::{diagnostics_from_report_with_source, emit_json_diagnostics};
-use nebula_host::{DeclaredProbe, Host, HostConfig};
-use nebula_ir::IrProgram;
-use nebula_python::{emit_workspace, EmitOptions};
+use nebula_host::{AstProgram, DeclaredProbe, Host, HostConfig, IrProgram};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -106,7 +103,7 @@ enum CompileTarget {
 struct AstExport<'a> {
     entry: String,
     loaded: bool,
-    program: &'a Program,
+    program: &'a AstProgram,
 }
 
 #[derive(Serialize)]
@@ -116,10 +113,30 @@ struct IrExport<'a> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let host = Host::new();
-    match cli.command {
+    match Cli::parse().command {
+        Commands::Check { file, json } => {
+            let host = Host::new();
+            if json {
+                let result = host.check_file(&file);
+                if result.ok {
+                    println!("[]");
+                    ExitCode::SUCCESS
+                } else {
+                    emit_json_diagnostics(&result.diagnostics);
+                    ExitCode::FAILURE
+                }
+            } else {
+                match host.try_check_file(&file) {
+                    Ok(()) => {
+                        println!("ok: {}", file.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(err) => emit_failure(err, None, false),
+                }
+            }
+        }
         Commands::Parse { file, json, load } => {
+            let host = Host::new();
             let program_result = if load {
                 host.try_load_file(&file).map(|loaded| loaded.merged)
             } else {
@@ -134,80 +151,100 @@ fn main() -> ExitCode {
                 Err(err) => emit_failure(err, None, json),
             }
         }
-        Commands::Ir { file, json } => match host.try_lower_file(&file) {
-            Ok(ir) => emit_json_export(json, &IrExport {
-                entry: file.display().to_string(),
-                ir: &ir,
-            }),
-            Err(err) => emit_failure(err, None, json),
-        },
-        Commands::Check { file, json } => match host.try_check_file(&file) {
-            Ok(()) => {
-                if json {
-                    println!("[]");
-                } else {
-                    println!("ok: {}", file.display());
-                }
-                ExitCode::SUCCESS
+        Commands::Ir { file, json } => {
+            let host = Host::new();
+            match host.try_lower_file(&file) {
+                Ok(ir) => emit_json_export(json, &IrExport {
+                    entry: file.display().to_string(),
+                    ir: &ir,
+                }),
+                Err(err) => emit_failure(err, None, json),
             }
-            Err(err) => emit_failure(err, None, json),
-        },
-        Commands::Fmt { file, write } => match host.try_format_file(&file, write) {
-            Ok(result) => {
-                if let Some(formatted) = result.entry_display {
-                    print!("{formatted}");
-                } else {
-                    eprintln!(
-                        "formatted {} module(s), entry {}",
-                        result.modules_written,
-                        file.display()
-                    );
+        }
+        Commands::Fmt { file, write } => {
+            let host = Host::new();
+            match host.try_format_file(&file, write) {
+                Ok(result) => {
+                    if let Some(formatted) = result.entry_display {
+                        print!("{formatted}");
+                    } else {
+                        eprintln!(
+                            "formatted {} module(s), entry {}",
+                            result.modules_written,
+                            file.display()
+                        );
+                    }
+                    ExitCode::SUCCESS
                 }
-                ExitCode::SUCCESS
+                Err(err) => emit_failure(err, None, false),
             }
-            Err(err) => emit_failure(err, None, false),
-        },
+        }
         Commands::Run {
             file,
             telemetry,
             probes,
             json,
         } => {
-            let host = Host::with_config(HostConfig {
-                probe_manifest: probes,
-                telemetry_path: telemetry,
-                ..HostConfig::default()
-            });
-            match host.try_run_file(&file) {
-                Ok(output) => {
-                    if !json {
+            let host = host_with_config(probes, telemetry);
+            if json {
+                let result = host.run_file(&file);
+                if result.ok {
+                    ExitCode::SUCCESS
+                } else {
+                    emit_json_diagnostics(&result.diagnostics);
+                    ExitCode::FAILURE
+                }
+            } else {
+                match host.try_run_file(&file) {
+                    Ok(output) => {
                         for line in &output.printed {
                             println!("{line}");
                         }
+                        ExitCode::SUCCESS
                     }
-                    ExitCode::SUCCESS
+                    Err(err) => emit_failure(err, None, false),
                 }
-                Err(err) => emit_failure(err, None, json),
             }
         }
-        Commands::Probes { command } => match command {
-            ProbesCommands::List { probes, mcp, json } => {
-                match list_probes(&host, &probes, mcp, json) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(err) => emit_failure(err, None, json),
+        Commands::Probes { command } => {
+            let host = Host::new();
+            match command {
+                ProbesCommands::List { probes, mcp, json } => {
+                    match list_probes(&host, &probes, mcp, json) {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(err) => emit_failure(err, None, json),
+                    }
                 }
             }
-        },
+        }
         Commands::Compile {
             file,
             target,
             out,
             telemetry,
             probes,
-        } => match compile(&host, &file, target, out, telemetry, probes) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(err) => emit_failure(err, None, false),
-        },
+        } => {
+            let host = host_with_config(probes, telemetry);
+            match compile(&host, &file, target, out) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(err) => emit_failure(err, None, false),
+            }
+        }
+    }
+}
+
+fn host_with_config(
+    probe_manifest: Option<PathBuf>,
+    telemetry_path: Option<PathBuf>,
+) -> Host {
+    if probe_manifest.is_some() || telemetry_path.is_some() {
+        Host::with_config(HostConfig {
+            probe_manifest,
+            telemetry_path,
+            ..HostConfig::default()
+        })
+    } else {
+        Host::new()
     }
 }
 
@@ -299,39 +336,14 @@ fn list_probes(
     Ok(())
 }
 
-fn compile(
-    host: &Host,
-    path: &PathBuf,
-    target: CompileTarget,
-    out: PathBuf,
-    telemetry: Option<PathBuf>,
-    probes: Option<PathBuf>,
-) -> miette::Result<()> {
+fn compile(host: &Host, path: &PathBuf, target: CompileTarget, out: PathBuf) -> miette::Result<()> {
     match target {
-        CompileTarget::Python => compile_python(host, path, out, telemetry, probes),
+        CompileTarget::Python => compile_python(host, path, out),
     }
 }
 
-fn compile_python(
-    host: &Host,
-    path: &PathBuf,
-    out: PathBuf,
-    telemetry: Option<PathBuf>,
-    probes: Option<PathBuf>,
-) -> miette::Result<()> {
-    let compiled = host.try_compile_file(path)?;
-    let result = emit_workspace(
-        &compiled.loaded,
-        &compiled.ir,
-        &EmitOptions {
-            out_dir: out.clone(),
-            entry_path: path.clone(),
-            probe_manifest: probes,
-            telemetry_path: telemetry,
-        },
-    )
-    .map_err(Report::new)?;
-
+fn compile_python(host: &Host, path: &PathBuf, out: PathBuf) -> miette::Result<()> {
+    let result = host.try_emit_python(path, &out)?;
     println!(
         "compiled {} module(s) to {}",
         result.modules_emitted,

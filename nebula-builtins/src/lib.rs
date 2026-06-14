@@ -13,6 +13,7 @@ pub enum BuiltinCheckerKind {
     At,
     Get,
     Has,
+    Insert,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +142,7 @@ fn parse_checker(
         Some("at") => Ok(BuiltinCheckerKind::At),
         Some("get") => Ok(BuiltinCheckerKind::Get),
         Some("has") => Ok(BuiltinCheckerKind::Has),
+        Some("insert") => Ok(BuiltinCheckerKind::Insert),
         Some(other) => Err(format!("unknown builtin checker `{other}`")),
     }
 }
@@ -185,9 +187,9 @@ mod tests {
     #[test]
     fn manifest_lists_all_runtime_builtins() {
         let names: Vec<_> = manifest().names().collect();
-        assert_eq!(names.len(), 12);
+        assert_eq!(names.len(), 13);
         for name in [
-            "print", "len", "push", "at", "get", "has", "str_to_int", "int_to_str",
+            "print", "len", "push", "at", "get", "has", "insert", "str_to_int", "int_to_str",
             "str_to_float", "float_to_str", "int_to_float", "float_to_int",
         ] {
             assert!(manifest().is_builtin(name), "missing builtin {name}");

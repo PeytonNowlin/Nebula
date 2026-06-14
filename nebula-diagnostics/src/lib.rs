@@ -1,11 +1,12 @@
+use std::error::Error as StdError;
 use std::path::Path;
 
 use miette::{Diagnostic, LabeledSpan, Report, SourceSpan as MietteSourceSpan};
-use nebula_ast::Span;
+use nebula_ast::{neb_code_from_miette, NebError};
 use nebula_ir::IrError;
 use nebula_load::LoadError;
 use nebula_runtime::RuntimeError;
-use nebula_syntax::ParseError;
+use nebula_syntax::{LexError, ParseError};
 use nebula_types::{TypeError, TypecheckErrors};
 use serde::Serialize;
 
@@ -43,38 +44,127 @@ pub fn diagnostics_from_report_with_source(
     let file = file.as_deref();
     let mut out = Vec::new();
 
-    if let Some(errors) = report.downcast_ref::<TypecheckErrors>() {
-        for type_error in errors.errors() {
-            push_type_error(type_error, source, file, &mut out);
-        }
-        return out;
-    }
-    if let Some(parse_err) = report.downcast_ref::<ParseError>() {
-        push_parse_error(parse_err, source, file, &mut out);
-        return out;
-    }
-    if let Some(load_err) = report.downcast_ref::<LoadError>() {
-        push_load_error(load_err, source, file, &mut out);
-        return out;
-    }
-    if let Some(type_err) = report.downcast_ref::<TypeError>() {
-        push_type_error(type_err, source, file, &mut out);
-        return out;
-    }
-    if let Some(runtime_err) = report.downcast_ref::<RuntimeError>() {
-        push_runtime_error(runtime_err, &mut out);
-        return out;
-    }
-    if let Some(ir_err) = report.downcast_ref::<IrError>() {
-        push_ir_error(ir_err, &mut out);
+    if try_extract_structured(report, source, file, &mut out) {
         return out;
     }
 
-    collect_diagnostic(report.as_ref(), source, file, &mut out);
+    collect_miette_diagnostic(&**report, source, file, &mut out);
     if out.is_empty() {
         push_fallback(report, &mut out);
     }
     out
+}
+
+pub fn emit_json_diagnostics(diagnostics: &[DiagnosticJson]) {
+    let json = serde_json::to_string(diagnostics).expect("serialize diagnostics");
+    eprintln!("{json}");
+}
+
+pub fn diagnostics_from_type_errors(
+    path: impl AsRef<Path>,
+    source: &str,
+    errors: &TypecheckErrors,
+) -> Vec<DiagnosticJson> {
+    let file = path.as_ref().display().to_string();
+    let mut out = Vec::new();
+    push_neb_errors(errors.errors(), Some(source), Some(&file), &mut out);
+    out
+}
+
+fn try_extract_structured(
+    report: &Report,
+    source: Option<&str>,
+    file: Option<&str>,
+    out: &mut Vec<DiagnosticJson>,
+) -> bool {
+    for cause in report.chain() {
+        if try_downcast_cause(cause, source, file, out) {
+            return true;
+        }
+    }
+    false
+}
+
+fn try_downcast_cause(
+    cause: &(dyn StdError + 'static),
+    source: Option<&str>,
+    file: Option<&str>,
+    out: &mut Vec<DiagnosticJson>,
+) -> bool {
+    if let Some(errors) = cause.downcast_ref::<TypecheckErrors>() {
+        push_neb_errors(errors.errors(), source, file, out);
+        return true;
+    }
+    if let Some(load_err) = cause.downcast_ref::<LoadError>() {
+        return push_load_error(load_err, source, file, out);
+    }
+    if let Some(parse_err) = cause.downcast_ref::<ParseError>() {
+        push_neb_error(parse_err, source, file, out);
+        return true;
+    }
+    if let Some(lex_err) = cause.downcast_ref::<LexError>() {
+        push_neb_error(lex_err, source, file, out);
+        return true;
+    }
+    if let Some(type_err) = cause.downcast_ref::<TypeError>() {
+        push_neb_error(type_err, source, file, out);
+        return true;
+    }
+    if let Some(runtime_err) = cause.downcast_ref::<RuntimeError>() {
+        push_neb_error(runtime_err, source, file, out);
+        return true;
+    }
+    if let Some(ir_err) = cause.downcast_ref::<IrError>() {
+        push_neb_error(ir_err, source, file, out);
+        return true;
+    }
+    false
+}
+
+fn push_load_error(
+    load_err: &LoadError,
+    source: Option<&str>,
+    file: Option<&str>,
+    out: &mut Vec<DiagnosticJson>,
+) -> bool {
+    if let LoadError::Parse { path, source: parse_err, .. } = load_err {
+        let imported_source = std::fs::read_to_string(path).ok();
+        let imported_file = path.display().to_string();
+        push_neb_error(
+            parse_err,
+            imported_source.as_deref(),
+            Some(imported_file.as_str()),
+            out,
+        );
+        return true;
+    }
+    push_neb_error(load_err, source, file, out);
+    true
+}
+
+fn push_neb_errors<E: NebError>(
+    errors: impl IntoIterator<Item = E>,
+    source: Option<&str>,
+    file: Option<&str>,
+    out: &mut Vec<DiagnosticJson>,
+) {
+    for err in errors {
+        push_neb_error(&err, source, file, out);
+    }
+}
+
+fn push_neb_error(err: &impl NebError, source: Option<&str>, file: Option<&str>, out: &mut Vec<DiagnosticJson>) {
+    out.push(diagnostic_json(err, source, file));
+}
+
+fn diagnostic_json(err: &impl NebError, source: Option<&str>, file: Option<&str>) -> DiagnosticJson {
+    DiagnosticJson {
+        code: err.neb_code().to_string(),
+        span: err
+            .neb_span()
+            .map(|span| make_span(file, &span, source)),
+        message: err.neb_message(),
+    }
 }
 
 fn source_context(
@@ -97,18 +187,10 @@ fn source_context(
         }
     }
 
-    (
-        None,
-        fallback_source.map(str::to_string),
-    )
+    (None, fallback_source.map(str::to_string))
 }
 
-pub fn emit_json_diagnostics(diagnostics: &[DiagnosticJson]) {
-    let json = serde_json::to_string(diagnostics).expect("serialize diagnostics");
-    eprintln!("{json}");
-}
-
-fn collect_diagnostic(
+fn collect_miette_diagnostic(
     err: &dyn Diagnostic,
     source: Option<&str>,
     file: Option<&str>,
@@ -118,225 +200,45 @@ fn collect_diagnostic(
         let related: Vec<_> = related.collect();
         if !related.is_empty() {
             for child in related {
-                collect_diagnostic(child, source, file, out);
+                collect_miette_diagnostic(child, source, file, out);
             }
             return;
         }
     }
 
     if let Some(source_err) = err.diagnostic_source() {
-        collect_diagnostic(source_err, source, file, out);
+        collect_miette_diagnostic(source_err, source, file, out);
         return;
     }
 
-    push_from_message(err.to_string(), span_from_labels(err, source, file), out);
+    push_miette_leaf(err, source, file, out);
+}
+
+/// Fallback when only a miette [`Report`] is available. Typed [`NebError`] APIs should
+/// be preferred for JSON export.
+fn push_miette_leaf(
+    err: &dyn Diagnostic,
+    source: Option<&str>,
+    file: Option<&str>,
+    out: &mut Vec<DiagnosticJson>,
+) {
+    let code = err
+        .code()
+        .and_then(|code| neb_code_from_miette(&code.to_string()))
+        .unwrap_or("NEB-E001")
+        .to_string();
+    out.push(DiagnosticJson {
+        code,
+        span: span_from_labels(err, source, file),
+        message: err.to_string(),
+    });
 }
 
 fn push_fallback(report: &Report, out: &mut Vec<DiagnosticJson>) {
-    let message = report.to_string();
-    let code = extract_neb_code(&message).unwrap_or_else(|| "NEB-E001".to_string());
     out.push(DiagnosticJson {
-        code,
+        code: "NEB-E001".to_string(),
         span: None,
-        message,
-    });
-}
-
-fn push_type_error(
-    err: &TypeError,
-    source: Option<&str>,
-    file: Option<&str>,
-    out: &mut Vec<DiagnosticJson>,
-) {
-    let (code, span, message) = match err {
-        TypeError::UndefinedIdent { name, span } => (
-            "NEB-T001",
-            span,
-            format!("undefined identifier `{name}`"),
-        ),
-        TypeError::Mismatch {
-            expected,
-            found,
-            span,
-        } => (
-            "NEB-T002",
-            span,
-            format!("type mismatch: expected {expected}, found {found}"),
-        ),
-        TypeError::ImmutableAssign { name, span } => (
-            "NEB-T003",
-            span,
-            format!("cannot assign to immutable binding `{name}`"),
-        ),
-        TypeError::UndefinedFn { name, span } => (
-            "NEB-T004",
-            span,
-            format!("undefined function `{name}`"),
-        ),
-        TypeError::UndefinedStruct { name, span } => (
-            "NEB-T005",
-            span,
-            format!("undefined struct `{name}`"),
-        ),
-        TypeError::UndefinedProbe { name, span } => (
-            "NEB-T006",
-            span,
-            format!("undefined probe `{name}`"),
-        ),
-        TypeError::MissingMain { span } => (
-            "NEB-T007",
-            span,
-            "missing mission entry point `main`".to_string(),
-        ),
-        TypeError::UnknownField {
-            struct_name,
-            field,
-            span,
-        } => (
-            "NEB-T008",
-            span,
-            format!("unknown field `{field}` on struct `{struct_name}`"),
-        ),
-        TypeError::DuplicateSymbol { kind, name, span } => (
-            "NEB-T009",
-            span,
-            format!("duplicate {kind} `{name}`"),
-        ),
-    };
-
-    out.push(DiagnosticJson {
-        code: code.to_string(),
-        span: Some(make_span(file, span, source)),
-        message,
-    });
-}
-
-fn push_parse_error(
-    err: &ParseError,
-    source: Option<&str>,
-    file: Option<&str>,
-    out: &mut Vec<DiagnosticJson>,
-) {
-    match err {
-        ParseError::Lex(lex) => {
-            push_with_span(
-                err.to_string(),
-                extract_neb_code(&err.to_string()),
-                &lex.span,
-                source,
-                file,
-                out,
-            );
-        }
-        ParseError::Unexpected { span, .. }
-        | ParseError::Eof { span }
-        | ParseError::DeprecatedComparison { span, .. }
-        | ParseError::DeprecatedBraceBlock { span, .. } => {
-            push_with_span(
-                err.to_string(),
-                extract_neb_code(&err.to_string()),
-                span,
-                source,
-                file,
-                out,
-            );
-        }
-    }
-}
-
-fn push_load_error(
-    err: &LoadError,
-    source: Option<&str>,
-    file: Option<&str>,
-    out: &mut Vec<DiagnosticJson>,
-) {
-    match err {
-        LoadError::Parse {
-            path,
-            source: parse_err,
-            ..
-        } => {
-            let imported_source = std::fs::read_to_string(path).ok();
-            let imported_file = Some(path.display().to_string());
-            push_parse_error(
-                parse_err,
-                imported_source.as_deref(),
-                imported_file.as_deref(),
-                out,
-            );
-        }
-        LoadError::NotFound { path, span }
-        | LoadError::Circular { path, span }
-        | LoadError::LibraryHasMission { path, span } => {
-            push_with_span(
-                err.to_string(),
-                extract_neb_code(&err.to_string()),
-                span,
-                source,
-                file,
-                out,
-            );
-            let _ = path;
-        }
-        LoadError::Duplicate {
-            existing,
-            new,
-            span,
-            ..
-        } => {
-            push_with_span(
-                err.to_string(),
-                extract_neb_code(&err.to_string()),
-                span,
-                source,
-                file,
-                out,
-            );
-            let _ = (existing, new);
-        }
-        LoadError::Read { span, .. } => {
-            push_with_span(
-                err.to_string(),
-                extract_neb_code(&err.to_string()),
-                span,
-                source,
-                file,
-                out,
-            );
-        }
-    }
-}
-
-fn push_runtime_error(err: &RuntimeError, out: &mut Vec<DiagnosticJson>) {
-    push_from_message(err.to_string(), None, out);
-}
-
-fn push_ir_error(err: &IrError, out: &mut Vec<DiagnosticJson>) {
-    push_from_message(err.to_string(), None, out);
-}
-
-fn push_with_span(
-    full_message: String,
-    code: Option<String>,
-    span: &Span,
-    source: Option<&str>,
-    file: Option<&str>,
-    out: &mut Vec<DiagnosticJson>,
-) {
-    let code = code.unwrap_or_else(|| "NEB-E001".to_string());
-    out.push(DiagnosticJson {
-        code,
-        span: Some(make_span(file, span, source)),
-        message: human_message(&full_message),
-    });
-}
-
-fn push_from_message(message: String, span: Option<DiagnosticSpan>, out: &mut Vec<DiagnosticJson>) {
-    let code = extract_neb_code(&message).unwrap_or_else(|| "NEB-E001".to_string());
-    out.push(DiagnosticJson {
-        code,
-        span,
-        message: human_message(&message),
+        message: report.to_string(),
     });
 }
 
@@ -359,7 +261,7 @@ fn span_from_labeled(
     make_span(file, &span, source)
 }
 
-fn make_span(file: Option<&str>, span: &Span, source: Option<&str>) -> DiagnosticSpan {
+fn make_span(file: Option<&str>, span: &nebula_ast::Span, source: Option<&str>) -> DiagnosticSpan {
     let (line, column) = source
         .map(|text| line_column(text, span.start))
         .unwrap_or((None, None));
@@ -387,38 +289,6 @@ fn line_column(source: &str, offset: usize) -> (Option<usize>, Option<usize>) {
     (Some(line), Some(column))
 }
 
-fn extract_neb_code(message: &str) -> Option<String> {
-    let rest = message.strip_prefix("NEB-")?;
-    let len = rest
-        .chars()
-        .take_while(|ch| ch.is_ascii_alphanumeric())
-        .count();
-    if len == 0 {
-        return None;
-    }
-    Some(format!("NEB-{}", &rest[..len]))
-}
-
-fn human_message(message: &str) -> String {
-    message
-        .split_once("] ")
-        .map(|(_, body)| body.to_string())
-        .unwrap_or_else(|| message.to_string())
-}
-
-pub fn diagnostics_from_type_errors(
-    path: impl AsRef<Path>,
-    source: &str,
-    errors: &TypecheckErrors,
-) -> Vec<DiagnosticJson> {
-    let file = path.as_ref().display().to_string();
-    let mut out = Vec::new();
-    for err in errors.errors() {
-        push_type_error(err, Some(source), Some(&file), &mut out);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -429,7 +299,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn type_mismatch_json_includes_code_span_and_message() {
+    fn typed_errors_use_neb_message_not_display_templates() {
         let src = r#"
 mission main {
   let x: Int = "not an int";
@@ -437,12 +307,13 @@ mission main {
 "#;
         let program = parse(src).expect("parse");
         let errors = typecheck(&program).expect_err("typecheck");
-        let report = report_with_source(Path::new("example.neb"), src, errors);
-        let diags = diagnostics_from_report_with_source(&report, Some(src));
+        let diags = diagnostics_from_type_errors(Path::new("example.neb"), src, &errors);
 
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, "NEB-T002");
         assert!(diags[0].message.contains("type mismatch"));
+        assert!(!diags[0].message.starts_with("NEB-"));
+        assert!(!diags[0].message.contains('['));
         let span = diags[0].span.as_ref().expect("span");
         assert_eq!(span.file.as_deref(), Some("example.neb"));
         assert!(span.start < span.end);
@@ -461,8 +332,7 @@ mission main {
 "#;
         let program = parse(src).expect("parse");
         let errors = typecheck(&program).expect_err("typecheck");
-        let report = report_with_source(Path::new("example.neb"), src, errors);
-        let diags = diagnostics_from_report_with_source(&report, Some(src));
+        let diags = diagnostics_from_type_errors(Path::new("example.neb"), src, &errors);
 
         assert_eq!(diags.len(), 2);
         assert!(diags.iter().any(|d| d.code == "NEB-T004"));
@@ -470,12 +340,23 @@ mission main {
     }
 
     #[test]
-    fn json_roundtrip_is_valid_array() {
+    fn report_fallback_resolves_code_from_miette_not_display() {
         let src = "mission main { let x: Int = \"nope\"; }";
         let program = parse(src).expect("parse");
         let errors = typecheck(&program).expect_err("typecheck");
         let report = report_with_source(Path::new("bad.neb"), src, errors);
         let diags = diagnostics_from_report_with_source(&report, Some(src));
+
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, "NEB-T002");
+    }
+
+    #[test]
+    fn json_roundtrip_is_valid_array() {
+        let src = "mission main { let x: Int = \"nope\"; }";
+        let program = parse(src).expect("parse");
+        let errors = typecheck(&program).expect_err("typecheck");
+        let diags = diagnostics_from_type_errors(Path::new("bad.neb"), src, &errors);
         let json = serde_json::to_string(&diags).expect("json");
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("parse json");
         assert_eq!(parsed.len(), 1);

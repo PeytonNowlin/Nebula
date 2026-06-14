@@ -8,6 +8,7 @@ __all__ = [
     "nebula_at",
     "nebula_get",
     "nebula_has",
+    "nebula_insert",
     "nebula_str_to_int",
     "nebula_int_to_str",
     "nebula_str_to_float",
@@ -88,6 +89,14 @@ def nebula_has(m: dict, key) -> bool:
     if not isinstance(m, dict):
         raise NebulaRuntimeError("has expects a Map as first argument")
     return nebula_key(key) in m
+
+
+def nebula_insert(m: dict, key, value) -> None:
+    if not isinstance(m, dict):
+        raise NebulaRuntimeError("insert expects a Map as first argument")
+    # Mutates in place (the dict is shared by reference), matching the
+    # interpreter and the `push` builtin.
+    m[nebula_key(key)] = value
 
 
 def nebula_str_to_int(value: str) -> int:

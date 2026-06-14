@@ -12,6 +12,7 @@ nebula-fmt = { path = "../nebula-fmt" }
 nebula-types = { path = "../nebula-types" }
 nebula-ir = { path = "../nebula-ir" }
 nebula-runtime = { path = "../nebula-runtime" }
+nebula-python = { path = "../nebula-python" }
 nebula-diagnostics = { path = "../nebula-diagnostics" }
 miette.workspace = true
 

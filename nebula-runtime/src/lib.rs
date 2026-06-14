@@ -78,6 +78,54 @@ pub enum RuntimeError {
     IntegerOverflow { op: String },
 }
 
+impl nebula_ast::NebError for RuntimeError {
+    fn neb_code(&self) -> &'static str {
+        match self {
+            RuntimeError::Error { .. } => "NEB-R002",
+            RuntimeError::UndefinedProbe { .. } => "NEB-P001",
+            RuntimeError::ProbeNotImplemented { .. } => "NEB-P002",
+            RuntimeError::ProbeFailed { .. } => "NEB-P003",
+            RuntimeError::McpTransport { .. } => "NEB-P004",
+            RuntimeError::UndefinedVar { .. } => "NEB-R003",
+            RuntimeError::DivideByZero => "NEB-R004",
+            RuntimeError::IndexOutOfBounds { .. } => "NEB-R005",
+            RuntimeError::KeyNotFound { .. } => "NEB-R006",
+            RuntimeError::IntegerOverflow { .. } => "NEB-R007",
+        }
+    }
+
+    fn neb_message(&self) -> String {
+        match self {
+            RuntimeError::Error { message, .. } => message.clone(),
+            RuntimeError::UndefinedProbe { name, .. } => {
+                format!("undefined probe `{name}`")
+            }
+            RuntimeError::ProbeNotImplemented { name, .. } => {
+                format!("probe `{name}` is not implemented by the host")
+            }
+            RuntimeError::ProbeFailed { name, message, .. } => {
+                format!("probe `{name}` failed: {message}")
+            }
+            RuntimeError::McpTransport { message, .. } => {
+                format!("MCP transport error: {message}")
+            }
+            RuntimeError::UndefinedVar { name, .. } => format!("undefined variable `{name}`"),
+            RuntimeError::DivideByZero => "division by zero".to_string(),
+            RuntimeError::IndexOutOfBounds { index, len, .. } => {
+                format!("list index {index} out of bounds (len {len})")
+            }
+            RuntimeError::KeyNotFound { key, .. } => format!("key `{key}` not found in map"),
+            RuntimeError::IntegerOverflow { op, .. } => {
+                format!("integer overflow in `{op}`")
+            }
+        }
+    }
+
+    fn neb_span(&self) -> Option<nebula_ast::Span> {
+        None
+    }
+}
+
 #[derive(Serialize)]
 struct TelemetryEvent {
     step: String,
@@ -548,6 +596,35 @@ fn eval_builtin(
                 _ => Err(RuntimeError::Error {
                     message: "has requires a map as first argument".into(),
                 }),
+            }
+        }
+        "insert" => {
+            if args.len() != 3 {
+                return Err(RuntimeError::Error {
+                    message: "insert requires exactly 3 arguments".into(),
+                });
+            }
+            // First argument must be a map variable so it is mutated in place,
+            // mirroring `push` on lists.
+            let map_name = match args.first() {
+                Some(IrExpr::Var(name)) => name.clone(),
+                _ => {
+                    return Err(RuntimeError::Error {
+                        message: "insert requires a map variable as first argument".into(),
+                    });
+                }
+            };
+            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
+            let value = rt.eval_expr(&args[2])?;
+            match rt.env.get_mut(&map_name) {
+                Some(Value::Map(entries)) => {
+                    entries.insert(key, value);
+                    Ok(Value::None)
+                }
+                Some(_) => Err(RuntimeError::Error {
+                    message: format!("`{map_name}` is not a map"),
+                }),
+                None => Err(RuntimeError::UndefinedVar { name: map_name }),
             }
         }
         "str_to_int" => {

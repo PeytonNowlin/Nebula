@@ -183,6 +183,24 @@ mission main {
 }
 
 #[test]
+fn parity_map_insert() {
+    assert_parity(
+        "map_insert",
+        r#"
+mission main {
+  let mut m: Map<Str, Int> = {"a": 1};
+  insert(m, "b", 2);
+  insert(m, "a", 9);
+  print(int_to_str(get(m, "a")));
+  print(int_to_str(get(m, "b")));
+  print(int_to_str(len(m)));
+  if has(m, "b") then print("has-b"); else print("no-b"); end
+}
+"#,
+    );
+}
+
+#[test]
 fn parity_float_arithmetic_and_conversions() {
     assert_parity(
         "float_ops",
