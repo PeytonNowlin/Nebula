@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
 logos.workspace = true
-chumsky.workspace = true
 miette.workspace = true
 thiserror.workspace = true
 
