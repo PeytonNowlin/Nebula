@@ -525,6 +525,7 @@ dependencies = [
  "miette",
  "nebula-ast",
  "nebula-ir",
+ "nebula-load",
  "nebula-syntax",
  "nebula-types",
  "serde",

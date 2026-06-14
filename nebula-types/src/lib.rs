@@ -128,14 +128,6 @@ impl Checker {
             },
         );
         functions.insert(
-            "len".into(),
-            FnInfo {
-                name: "len".into(),
-                params: vec![("value".into(), Type::List(Box::new(Type::Int)))],
-                return_type: Type::Int,
-            },
-        );
-        functions.insert(
             "str_to_int".into(),
             FnInfo {
                 name: "str_to_int".into(),
@@ -413,6 +405,83 @@ impl Checker {
         }
     }
 
+    fn check_builtin_call(
+        &self,
+        name: &str,
+        args: &[Spanned<Expr>],
+        scope: &mut Scope,
+        errors: &mut Vec<TypeError>,
+    ) -> Option<Type> {
+        match name {
+            "push" => {
+                if args.len() != 2 {
+                    errors.push(TypeError::Mismatch {
+                        expected: "2 arguments".into(),
+                        found: format!("{} arguments", args.len()),
+                        span: args.first().map(|a| a.span.clone()).unwrap_or(0..0),
+                    });
+                    return Some(Type::Void);
+                }
+
+                if !matches!(args[0].node, Expr::Ident(_)) {
+                    errors.push(TypeError::Mismatch {
+                        expected: "list variable as first argument".into(),
+                        found: "expression".into(),
+                        span: args[0].span.clone(),
+                    });
+                }
+
+                let list_ty = self.check_expr_inner(&args[0].node, scope, errors);
+                let value_ty = self.check_expr_inner(&args[1].node, scope, errors);
+
+                match list_ty {
+                    Type::List(inner) => {
+                        if !types_equal(&inner, &value_ty) {
+                            errors.push(TypeError::Mismatch {
+                                expected: inner.display(),
+                                found: value_ty.display(),
+                                span: args[1].span.clone(),
+                            });
+                        }
+                    }
+                    _ => {
+                        errors.push(TypeError::Mismatch {
+                            expected: "List<T>".into(),
+                            found: list_ty.display(),
+                            span: args[0].span.clone(),
+                        });
+                    }
+                }
+
+                Some(Type::Void)
+            }
+            "len" => {
+                if args.len() != 1 {
+                    errors.push(TypeError::Mismatch {
+                        expected: "1 argument".into(),
+                        found: format!("{} arguments", args.len()),
+                        span: args.first().map(|a| a.span.clone()).unwrap_or(0..0),
+                    });
+                    return Some(Type::Int);
+                }
+
+                let arg_ty = self.check_expr_inner(&args[0].node, scope, errors);
+                match arg_ty {
+                    Type::List(_) | Type::Str => {}
+                    _ => {
+                        errors.push(TypeError::Mismatch {
+                            expected: "List<T> or Str".into(),
+                            found: arg_ty.display(),
+                            span: args[0].span.clone(),
+                        });
+                    }
+                }
+                Some(Type::Int)
+            }
+            _ => None,
+        }
+    }
+
     fn check_expr(&mut self, expr: &Expr, scope: &mut Scope, errors: &mut Vec<TypeError>) -> Type {
         self.check_expr_inner(expr, scope, errors)
     }
@@ -500,6 +569,9 @@ impl Checker {
             }
             Expr::Call { callee, args } => {
                 let name = &callee.node;
+                if let Some(ret) = self.check_builtin_call(name, args, scope, errors) {
+                    return ret;
+                }
                 if let Some(fn_info) = self.functions.get(name).cloned() {
                     if fn_info.params.len() != args.len() {
                         errors.push(TypeError::Mismatch {

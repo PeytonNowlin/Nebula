@@ -294,7 +294,10 @@ impl Runtime {
 }
 
 fn is_builtin(name: &str) -> bool {
-    matches!(name, "print" | "len" | "str_to_int" | "int_to_str")
+    matches!(
+        name,
+        "print" | "len" | "push" | "str_to_int" | "int_to_str"
+    )
 }
 
 fn eval_builtin(
@@ -320,6 +323,48 @@ fn eval_builtin(
                 _ => Err(RuntimeError::Error {
                     message: "len requires list or string".into(),
                 }),
+            }
+        }
+        "push" => {
+            if args.len() != 2 {
+                return Err(RuntimeError::Error {
+                    message: "push requires exactly 2 arguments".into(),
+                });
+            }
+
+            let list_name = match args.first() {
+                Some(IrExpr::Var(name)) => name.clone(),
+                _ => {
+                    return Err(RuntimeError::Error {
+                        message: "push requires a list variable as first argument".into(),
+                    });
+                }
+            };
+
+            let value = rt.eval_expr(
+                args.get(1).ok_or(RuntimeError::Error {
+                    message: "push requires a value as second argument".into(),
+                })?,
+            )?;
+
+            match rt.env.get_mut(&list_name) {
+                Some(Value::List(items)) => {
+                    if let Some(existing) = items.first() {
+                        if !values_same_type(existing, &value) {
+                            return Err(RuntimeError::Error {
+                                message: format!(
+                                    "push value type mismatch for list `{list_name}`"
+                                ),
+                            });
+                        }
+                    }
+                    items.push(value);
+                    Ok(Value::None)
+                }
+                Some(_) => Err(RuntimeError::Error {
+                    message: format!("`{list_name}` is not a list"),
+                }),
+                None => Err(RuntimeError::UndefinedVar { name: list_name }),
             }
         }
         "str_to_int" => {
@@ -428,6 +473,21 @@ fn is_truthy(v: &Value) -> bool {
         Value::List(items) => !items.is_empty(),
         _ => true,
     }
+}
+
+fn values_same_type(a: &Value, b: &Value) -> bool {
+    matches!(
+        (a, b),
+        (Value::Int(_), Value::Int(_))
+            | (Value::Float(_), Value::Float(_))
+            | (Value::Bool(_), Value::Bool(_))
+            | (Value::Str(_), Value::Str(_))
+            | (Value::None, Value::None)
+            | (Value::List(_), Value::List(_))
+            | (Value::Map(_), Value::Map(_))
+            | (Value::Some(_), Value::Some(_))
+            | (Value::Struct { .. }, Value::Struct { .. })
+    )
 }
 
 fn values_equal(a: &Value, b: &Value) -> bool {

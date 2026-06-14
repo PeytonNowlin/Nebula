@@ -1,0 +1,14 @@
+mission main {
+  let items: List<Int> = [1, 2, 3];
+
+  push(items, 4);
+  push(items, 5);
+
+  print(int_to_str(len(items)));
+
+  let names: List<Str> = ["alpha"];
+  push(names, "beta");
+  push(names, "gamma");
+
+  print(int_to_str(len(names)));
+}
