@@ -12,20 +12,20 @@ pub struct IrError {
     pub message: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IrProgram {
     pub sectors: HashMap<String, IrSector>,
     pub mission: IrMission,
     pub probes: HashMap<String, ProbeInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IrSector {
     pub functions: HashMap<String, IrFunction>,
     pub structs: HashMap<String, StructInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IrFunction {
     pub sector: String,
     pub name: String,
@@ -34,24 +34,24 @@ pub struct IrFunction {
     pub body: Vec<IrStmt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IrMission {
     pub name: String,
     pub stmts: Vec<IrStmt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ProbeInfo {
     pub name: String,
     pub params: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct StructInfo {
     pub fields: HashMap<String, Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum IrStmt {
     Let {
         name: String,
@@ -82,7 +82,7 @@ pub enum IrStmt {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum IrExpr {
     Int(i64),
     Float(f64),

@@ -1,8 +1,11 @@
 -- Nebula standard library: core builtins
 -- Provided by the runtime (no import needed):
 --   print(value: Str) -> Void
---   len(value: List<T> or Str) -> Int        -- string length is in code points
+--   len(value: List<T> or Map<K,V> or Str) -> Int  -- string length is in code points
 --   push(list: List<T>, value: T) -> Void    -- first arg must be a list variable
+--   at(list: List<T>, index: Int) -> T       -- 0-based; out-of-range fails NEB-R005
+--   get(map: Map<K,V>, key: K) -> V          -- missing key fails NEB-R006
+--   has(map: Map<K,V>, key: K) -> Bool
 --   str_to_int(s: Str) -> Int
 --   int_to_str(n: Int) -> Str
 --   str_to_float(s: Str) -> Float

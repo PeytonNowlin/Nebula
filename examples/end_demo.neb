@@ -1,7 +1,7 @@
 mission main {
   let mut count: Int = 0;
 
-  while count less than 3 do
+  while count lt 3 do
     print(int_to_str(count));
     set count = count plus 1;
   end

@@ -64,3 +64,42 @@ mission main {
     );
     assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
 }
+
+#[test]
+fn list_index_out_of_bounds_reports_neb_r005() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let xs: List<Int> = [1, 2];
+  print(int_to_str(at(xs, 5)));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R005"), "expected index-out-of-bounds code, got: {err}");
+}
+
+#[test]
+fn negative_list_index_reports_neb_r005() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let xs: List<Int> = [1, 2];
+  print(int_to_str(at(xs, 0 minus 1)));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R005"), "expected index-out-of-bounds code, got: {err}");
+}
+
+#[test]
+fn missing_map_key_reports_neb_r006() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let m: Map<Str, Int> = {"a": 1};
+  print(int_to_str(get(m, "missing")));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R006"), "expected key-not-found code, got: {err}");
+}

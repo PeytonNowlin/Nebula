@@ -104,6 +104,66 @@ mission main {
 }
 
 #[test]
+fn at_returns_list_element_type() {
+    let src = r#"
+mission main {
+  let xs: List<Str> = ["a"];
+  print(at(xs, 0));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("at should return the list element type (Str)");
+}
+
+#[test]
+fn get_returns_map_value_type() {
+    let src = r#"
+mission main {
+  let m: Map<Str, Int> = {"a": 1};
+  print(int_to_str(get(m, "a")));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("get should return the map value type (Int)");
+}
+
+#[test]
+fn get_on_non_map_is_rejected() {
+    let src = r#"
+mission main {
+  let xs: List<Int> = [1];
+  print(int_to_str(get(xs, 0)));
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(typecheck(&program).is_err(), "get on a List should fail to typecheck");
+}
+
+#[test]
+fn at_with_non_int_index_is_rejected() {
+    let src = r#"
+mission main {
+  let xs: List<Int> = [1];
+  print(int_to_str(at(xs, "0")));
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(typecheck(&program).is_err(), "at with a Str index should fail to typecheck");
+}
+
+#[test]
+fn len_accepts_map() {
+    let src = r#"
+mission main {
+  let m: Map<Str, Int> = {"a": 1};
+  print(int_to_str(len(m)));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("len should accept a Map");
+}
+
+#[test]
 fn empty_list_defaults_without_context() {
     let src = r#"
 sector math {

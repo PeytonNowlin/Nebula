@@ -5,3 +5,8 @@ edition.workspace = true
 
 [dependencies]
 miette.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+nebula-syntax = { path = "../nebula-syntax" }
+serde_json.workspace = true

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "telemetry-event.schema.json",
+  "title": "NebulaTelemetryEvent",
+  "description": "One JSONL record appended by the runtime for each statement executed inside a `telemetry` block (`nebula run --telemetry <path>`).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["step", "detail"],
+  "properties": {
+    "step": {
+      "type": "string",
+      "enum": ["let", "set", "probe"],
+      "description": "Statement kind that executed inside telemetry."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Binding name for `let`/`set`, or resolved probe name for `call`."
+    }
+  },
+  "examples": [
+    { "step": "let", "detail": "count" },
+    { "step": "set", "detail": "count" },
+    { "step": "probe", "detail": "log" }
+  ]
+}

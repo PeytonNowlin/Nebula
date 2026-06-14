@@ -58,6 +58,14 @@ pub enum RuntimeError {
     #[error("NEB-R004 [runtime_error] division by zero")]
     #[diagnostic(code(nebula::divide_by_zero))]
     DivideByZero,
+
+    #[error("NEB-R005 [runtime_error] list index {index} out of bounds (len {len})")]
+    #[diagnostic(code(nebula::index_out_of_bounds))]
+    IndexOutOfBounds { index: i64, len: usize },
+
+    #[error("NEB-R006 [runtime_error] key `{key}` not found in map")]
+    #[diagnostic(code(nebula::key_not_found))]
+    KeyNotFound { key: String },
 }
 
 #[derive(Serialize)]
@@ -74,6 +82,8 @@ pub struct Runtime {
     current_sector: Option<String>,
     telemetry_path: Option<String>,
     telemetry_enabled: bool,
+    capture_print: bool,
+    printed: Vec<String>,
 }
 
 impl Runtime {
@@ -94,7 +104,20 @@ impl Runtime {
             current_sector: None,
             telemetry_path: None,
             telemetry_enabled: false,
+            capture_print: false,
+            printed: Vec::new(),
         }
+    }
+
+    /// Capture `print` output in [`Runtime::take_printed`] instead of writing to stdout.
+    pub fn with_capture_print(mut self, capture: bool) -> Self {
+        self.capture_print = capture;
+        self
+    }
+
+    /// Drain lines emitted by `print` when print capture is enabled.
+    pub fn take_printed(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.printed)
     }
 
     pub fn with_probe_host(mut self, host: RegistryProbeHost) -> Self {
@@ -366,6 +389,9 @@ fn is_builtin(name: &str) -> bool {
         "print"
             | "len"
             | "push"
+            | "at"
+            | "get"
+            | "has"
             | "str_to_int"
             | "int_to_str"
             | "str_to_float"
@@ -403,7 +429,12 @@ fn eval_builtin(
         "print" => {
             if let Some(arg) = args.first() {
                 let v = rt.eval_expr(arg)?;
-                println!("{}", value_to_string(&v)?);
+                let line = value_to_string(&v)?;
+                if rt.capture_print {
+                    rt.printed.push(line);
+                } else {
+                    println!("{line}");
+                }
             }
             Ok(Value::None)
         }
@@ -413,11 +444,12 @@ fn eval_builtin(
             })?)?;
             match v {
                 Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Map(map) => Ok(Value::Int(map.len() as i64)),
                 // Count Unicode scalar values, not bytes, to match the Python
                 // backend's `len()` (NEB string length is in code points).
                 Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
                 _ => Err(RuntimeError::Error {
-                    message: "len requires list or string".into(),
+                    message: "len requires list, map, or string".into(),
                 }),
             }
         }
@@ -461,6 +493,69 @@ fn eval_builtin(
                     message: format!("`{list_name}` is not a list"),
                 }),
                 None => Err(RuntimeError::UndefinedVar { name: list_name }),
+            }
+        }
+        "at" => {
+            if args.len() != 2 {
+                return Err(RuntimeError::Error {
+                    message: "at requires exactly 2 arguments".into(),
+                });
+            }
+            let list = rt.eval_expr(&args[0])?;
+            let index = match rt.eval_expr(&args[1])? {
+                Value::Int(i) => i,
+                _ => {
+                    return Err(RuntimeError::Error {
+                        message: "at index must be an Int".into(),
+                    })
+                }
+            };
+            match list {
+                Value::List(items) => {
+                    if index < 0 || index as usize >= items.len() {
+                        return Err(RuntimeError::IndexOutOfBounds {
+                            index,
+                            len: items.len(),
+                        });
+                    }
+                    Ok(items[index as usize].clone())
+                }
+                _ => Err(RuntimeError::Error {
+                    message: "at requires a list as first argument".into(),
+                }),
+            }
+        }
+        "get" => {
+            if args.len() != 2 {
+                return Err(RuntimeError::Error {
+                    message: "get requires exactly 2 arguments".into(),
+                });
+            }
+            let map = rt.eval_expr(&args[0])?;
+            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
+            match map {
+                Value::Map(entries) => entries
+                    .get(&key)
+                    .cloned()
+                    .ok_or(RuntimeError::KeyNotFound { key }),
+                _ => Err(RuntimeError::Error {
+                    message: "get requires a map as first argument".into(),
+                }),
+            }
+        }
+        "has" => {
+            if args.len() != 2 {
+                return Err(RuntimeError::Error {
+                    message: "has requires exactly 2 arguments".into(),
+                });
+            }
+            let map = rt.eval_expr(&args[0])?;
+            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
+            match map {
+                Value::Map(entries) => Ok(Value::Bool(entries.contains_key(&key))),
+                _ => Err(RuntimeError::Error {
+                    message: "has requires a map as first argument".into(),
+                }),
             }
         }
         "str_to_int" => {

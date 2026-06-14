@@ -148,6 +148,26 @@ mission main {
 }
 
 #[test]
+fn parity_collection_access() {
+    assert_parity(
+        "collection_access",
+        r#"
+mission main {
+  let xs: List<Str> = ["a", "b", "c"];
+  print(at(xs, 0));
+  print(at(xs, 2));
+  print(int_to_str(len(xs)));
+  let m: Map<Str, Int> = {"x": 10, "y": 20};
+  print(int_to_str(get(m, "y")));
+  print(int_to_str(len(m)));
+  if has(m, "x") then print("has-x"); else print("no-x"); end
+  if has(m, "z") then print("has-z"); else print("no-z"); end
+}
+"#,
+    );
+}
+
+#[test]
 fn parity_float_arithmetic_and_conversions() {
     assert_parity(
         "float_ops",
@@ -161,7 +181,7 @@ mission main {
   print(float_to_str(int_to_float(3) times 2.0));
   print(int_to_str(float_to_int(3.9)));
   print(float_to_str(str_to_float("2.25") plus 0.25));
-  if x less than y then print("lt"); else print("ge"); end
+  if x lt y then print("lt"); else print("ge"); end
 }
 "#,
     );

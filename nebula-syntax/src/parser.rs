@@ -18,6 +18,22 @@ pub enum ParseError {
     #[error("NEB-S003 [parse_error] unexpected end of file")]
     #[diagnostic(code(nebula::eof))]
     Eof { span: Span },
+
+    #[error("NEB-S004 [parse_error] use `{canonical}` instead of `{found}`")]
+    #[diagnostic(code(nebula::deprecated_cmp_op))]
+    DeprecatedComparison {
+        canonical: String,
+        found: String,
+        span: Span,
+    },
+
+    #[error("NEB-S005 [parse_error] use `{canonical}`-delimited block instead of `{found}`")]
+    #[diagnostic(code(nebula::deprecated_brace_block))]
+    DeprecatedBraceBlock {
+        canonical: String,
+        found: String,
+        span: Span,
+    },
 }
 
 pub fn parse(source: &str) -> Result<Program, ParseError> {
@@ -303,18 +319,13 @@ impl Parser {
         self.advance();
         let condition = self.parse_expr()?;
         self.expect(TokenKind::Then, "then")?;
-        let (then_block, then_brace) =
-            self.parse_block(&[TokenKind::Else, TokenKind::End])?;
-        let (else_block, else_brace) = if self.match_kind(TokenKind::Else).is_some() {
-            let (block, brace) = self.parse_block(&[TokenKind::End])?;
-            (Some(block), brace)
+        let then_block = self.parse_end_control_block(&[TokenKind::Else, TokenKind::End])?;
+        let else_block = if self.match_kind(TokenKind::Else).is_some() {
+            Some(self.parse_end_control_block(&[TokenKind::End])?)
         } else {
-            (None, true)
+            None
         };
-
-        if !then_brace || else_block.is_some() && !else_brace {
-            self.expect(TokenKind::End, "end")?;
-        }
+        self.expect(TokenKind::End, "end")?;
 
         Ok(Stmt::If {
             condition,
@@ -327,10 +338,8 @@ impl Parser {
         self.advance();
         let condition = self.parse_expr()?;
         self.expect(TokenKind::Do, "do")?;
-        let (body, brace_style) = self.parse_block(&[TokenKind::End])?;
-        if !brace_style {
-            self.expect(TokenKind::End, "end")?;
-        }
+        let body = self.parse_end_control_block(&[TokenKind::End])?;
+        self.expect(TokenKind::End, "end")?;
         Ok(Stmt::While { condition, body })
     }
 
@@ -346,28 +355,25 @@ impl Parser {
 
     fn parse_telemetry_stmt(&mut self) -> Result<Stmt, ParseError> {
         self.advance();
-        let (body, brace_style) = self.parse_block(&[TokenKind::End])?;
-        if !brace_style {
-            self.expect(TokenKind::End, "end")?;
-        }
+        let body = self.parse_end_control_block(&[TokenKind::End])?;
+        self.expect(TokenKind::End, "end")?;
         Ok(Stmt::Telemetry { body })
     }
 
-    fn parse_block(
+    fn parse_end_control_block(
         &mut self,
         terminators: &[TokenKind],
-    ) -> Result<(Vec<Spanned<Stmt>>, bool), ParseError> {
-        if self.peek().map(|t| &t.kind) == Some(&TokenKind::LBrace) {
-            self.advance();
-            let mut stmts = Vec::new();
-            while self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
-                stmts.push(self.parse_stmt()?);
+    ) -> Result<Vec<Spanned<Stmt>>, ParseError> {
+        if let Some(Token { span, .. }) = self.peek() {
+            if self.peek().map(|t| &t.kind) == Some(&TokenKind::LBrace) {
+                return Err(ParseError::DeprecatedBraceBlock {
+                    canonical: "end".into(),
+                    found: "brace block".into(),
+                    span: span.clone(),
+                });
             }
-            self.expect(TokenKind::RBrace, "}")?;
-            Ok((stmts, true))
-        } else {
-            Ok((self.parse_end_block(terminators)?, false))
         }
+        self.parse_end_block(terminators)
     }
 
     fn parse_end_block(
@@ -565,23 +571,50 @@ impl Parser {
                 self.advance();
                 Some(BinaryOp::Ge)
             }
-            Some(TokenKind::Less) if self.tokens.get(self.pos + 1).map(|t| &t.kind) == Some(&TokenKind::Than) => {
-                self.advance();
-                self.advance();
-                Some(BinaryOp::Lt)
-            }
-            Some(TokenKind::Greater) if self.tokens.get(self.pos + 1).map(|t| &t.kind) == Some(&TokenKind::Than) => {
-                self.advance();
-                self.advance();
-                Some(BinaryOp::Gt)
-            }
             _ => None,
         }
     }
 
+    fn reject_deprecated_cmp_synonym(&mut self) -> Result<(), ParseError> {
+        let Some(Token { kind, span }) = self.peek().cloned() else {
+            return Ok(());
+        };
+        let TokenKind::Ident(word) = kind else {
+            return Ok(());
+        };
+        let synonym = match word.as_str() {
+            "less" if matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(than)) if than == "than"
+            ) => Some(("lt", "less than")),
+            "greater" if matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(than)) if than == "than"
+            ) => Some(("gt", "greater than")),
+            _ => None,
+        };
+        if let Some((canonical, found)) = synonym {
+            let end = self
+                .tokens
+                .get(self.pos + 1)
+                .map(|t| t.span.end)
+                .unwrap_or(span.end);
+            return Err(ParseError::DeprecatedComparison {
+                canonical: canonical.into(),
+                found: found.into(),
+                span: span.start..end,
+            });
+        }
+        Ok(())
+    }
+
     fn parse_cmp_expr(&mut self) -> Result<Spanned<Expr>, ParseError> {
         let mut left = self.parse_add_expr()?;
-        while let Some(op) = self.try_consume_cmp_op() {
+        loop {
+            self.reject_deprecated_cmp_synonym()?;
+            let Some(op) = self.try_consume_cmp_op() else {
+                break;
+            };
             let right = self.parse_add_expr()?;
             let span = left.span.start..right.span.end;
             left = Spanned::new(

@@ -1,9 +1,13 @@
 from nebula_runtime.errors import NebulaRuntimeError
+from nebula_runtime.values import nebula_key
 
 __all__ = [
     "nebula_print",
     "nebula_len",
     "nebula_push",
+    "nebula_at",
+    "nebula_get",
+    "nebula_has",
     "nebula_str_to_int",
     "nebula_int_to_str",
     "nebula_str_to_float",
@@ -38,6 +42,36 @@ def nebula_push(xs: list, value) -> None:
     if not isinstance(xs, list):
         raise NebulaRuntimeError("push expects List as first argument")
     xs.append(value)
+
+
+def nebula_at(xs: list, index: int):
+    if not isinstance(xs, list):
+        raise NebulaRuntimeError("at expects a List as first argument")
+    if not _is_int(index):
+        raise NebulaRuntimeError("at index must be an Int")
+    # No Python-style negative indexing: match the interpreter's bounds check.
+    if index < 0 or index >= len(xs):
+        from nebula_runtime.errors import NebulaIndexError
+
+        raise NebulaIndexError(index, len(xs))
+    return xs[index]
+
+
+def nebula_get(m: dict, key):
+    if not isinstance(m, dict):
+        raise NebulaRuntimeError("get expects a Map as first argument")
+    k = nebula_key(key)
+    if k not in m:
+        from nebula_runtime.errors import NebulaKeyError
+
+        raise NebulaKeyError(k)
+    return m[k]
+
+
+def nebula_has(m: dict, key) -> bool:
+    if not isinstance(m, dict):
+        raise NebulaRuntimeError("has expects a Map as first argument")
+    return nebula_key(key) in m
 
 
 def nebula_str_to_int(value: str) -> int:

@@ -686,16 +686,80 @@ impl Checker {
 
                 let arg_ty = self.check_expr_inner(&args[0].node, scope, errors, None);
                 match arg_ty {
-                    Type::List(_) | Type::Str => {}
+                    Type::List(_) | Type::Map(_, _) | Type::Str => {}
                     _ => {
                         errors.push(TypeError::Mismatch {
-                            expected: "List<T> or Str".into(),
+                            expected: "List<T>, Map<K, V>, or Str".into(),
                             found: arg_ty.display(),
                             span: args[0].span.clone(),
                         });
                     }
                 }
                 Some(Type::Int)
+            }
+            "at" => {
+                if args.len() != 2 {
+                    errors.push(TypeError::Mismatch {
+                        expected: "2 arguments".into(),
+                        found: format!("{} arguments", args.len()),
+                        span: args.first().map(|a| a.span.clone()).unwrap_or(0..0),
+                    });
+                    return Some(Type::Void);
+                }
+                let list_ty = self.check_expr_inner(&args[0].node, scope, errors, None);
+                let idx_ty = self.check_expr_inner(&args[1].node, scope, errors, Some(&Type::Int));
+                if idx_ty != Type::Int {
+                    errors.push(TypeError::Mismatch {
+                        expected: "Int".into(),
+                        found: idx_ty.display(),
+                        span: args[1].span.clone(),
+                    });
+                }
+                match list_ty {
+                    Type::List(inner) => Some(*inner),
+                    _ => {
+                        errors.push(TypeError::Mismatch {
+                            expected: "List<T>".into(),
+                            found: list_ty.display(),
+                            span: args[0].span.clone(),
+                        });
+                        Some(Type::Void)
+                    }
+                }
+            }
+            "get" | "has" => {
+                if args.len() != 2 {
+                    errors.push(TypeError::Mismatch {
+                        expected: "2 arguments".into(),
+                        found: format!("{} arguments", args.len()),
+                        span: args.first().map(|a| a.span.clone()).unwrap_or(0..0),
+                    });
+                    return Some(if name == "has" { Type::Bool } else { Type::Void });
+                }
+                let map_ty = self.check_expr_inner(&args[0].node, scope, errors, None);
+                match map_ty {
+                    Type::Map(key, value) => {
+                        let key_ty =
+                            self.check_expr_inner(&args[1].node, scope, errors, Some(&key));
+                        if !types_equal(&key, &key_ty) {
+                            errors.push(TypeError::Mismatch {
+                                expected: key.display(),
+                                found: key_ty.display(),
+                                span: args[1].span.clone(),
+                            });
+                        }
+                        Some(if name == "has" { Type::Bool } else { *value })
+                    }
+                    _ => {
+                        self.check_expr_inner(&args[1].node, scope, errors, None);
+                        errors.push(TypeError::Mismatch {
+                            expected: "Map<K, V>".into(),
+                            found: map_ty.display(),
+                            span: args[0].span.clone(),
+                        });
+                        Some(if name == "has" { Type::Bool } else { Type::Void })
+                    }
+                }
             }
             _ => None,
         }

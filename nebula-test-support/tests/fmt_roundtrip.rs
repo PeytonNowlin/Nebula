@@ -6,8 +6,8 @@ use nebula_test_support::{assert_golden, fmt_roundtrip, workspace_root};
 fn fmt_is_idempotent_on_messy_input() {
     let src = r#"mission main{
 let mut count:Int=0;
-while count less than 3 do{print(int_to_str(count));set count=count plus 1;}
-if count eq 3 then{print("done");}else{print("unexpected");}
+while count lt 3 do print(int_to_str(count));set count=count plus 1; end
+if count eq 3 then print("done"); else print("unexpected"); end
 }"#;
     fmt_roundtrip(src);
 }

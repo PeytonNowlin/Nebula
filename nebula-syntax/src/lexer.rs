@@ -72,12 +72,6 @@ pub enum TokenKind {
     Le,
     #[token("ge")]
     Ge,
-    #[token("less")]
-    Less,
-    #[token("than")]
-    Than,
-    #[token("greater")]
-    Greater,
     #[token("and")]
     And,
     #[token("or")]

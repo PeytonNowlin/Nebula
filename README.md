@@ -1,6 +1,6 @@
 # Nebula
 
-Nebula is a general-purpose programming language designed for AI agent authors. Every construct favors machine parseability over human brevity: operators are spelled as keywords (`plus`, `eq`, `less than`), types are always explicit, and the toolchain exposes structured error codes for reliable agent feedback.
+Nebula is a general-purpose programming language designed for AI agent authors. Every construct favors machine parseability over human brevity: operators are spelled as keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain exposes structured error codes for reliable agent feedback.
 
 This repository contains the Nebula compiler and interpreter, implemented in Rust.
 
@@ -93,7 +93,7 @@ Symbols inside a `sector` are stored as `sector.name`:
 
 ### Control-flow blocks
 
-`if`, `while`, and `telemetry` accept either brace blocks or `end`-delimited blocks. `nebula fmt` canonicalizes to `end` style:
+`if`, `while`, and `telemetry` use `end`-delimited blocks (brace blocks are rejected with `NEB-S005`):
 
 ```nebula
 if count eq 0 then
@@ -103,7 +103,7 @@ else
 end
 ```
 
-Brace blocks (`{ ... }`) remain valid and are still used for `sector`, `mission`, `fn`, and `struct` bodies.
+Braces (`{ ... }`) are used for `sector`, `mission`, `fn`, and `struct` bodies only.
 
 ### Types
 
@@ -124,8 +124,11 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 | Function | Signature | Notes |
 |----------|-----------|-------|
 | `print` | `fn(value: Str) -> Void` | Writes to stdout |
-| `len` | `fn(value: List<T> or Str) -> Int` | Element count or string length |
+| `len` | `fn(value: List<T> or Map<K,V> or Str) -> Int` | Element count, or string length in **code points** |
 | `push` | `fn(list: List<T>, value: T) -> Void` | Mutates a **list variable** in place; first arg must be an identifier |
+| `at` | `fn(list: List<T>, index: Int) -> T` | 0-based element access; out-of-range fails `NEB-R005` |
+| `get` | `fn(map: Map<K,V>, key: K) -> V` | Map lookup; missing key fails `NEB-R006` |
+| `has` | `fn(map: Map<K,V>, key: K) -> Bool` | Map key presence test |
 | `str_to_int` | `fn(s: Str) -> Int` | |
 | `int_to_str` | `fn(n: Int) -> Str` | |
 | `str_to_float` | `fn(s: Str) -> Float` | |
@@ -147,7 +150,7 @@ Probes declare capabilities the host is expected to provide. `call` invokes them
 
 | Handler kind | Description |
 |--------------|-------------|
-| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
+| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file; schema: [`schemas/probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json)) |
 | `command` | External process with Nebula's stdin/stdout JSON protocol |
 | `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
 
@@ -205,7 +208,7 @@ Run with MCP probes:
 cargo run -- run examples/agent_counter.neb --probes probes/mcp_stdio.json
 ```
 
-With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event describing the step.
+With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event (`schemas/telemetry-event.schema.json`: `step`, `detail`).
 
 ### Imports
 

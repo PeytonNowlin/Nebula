@@ -1,21 +1,19 @@
 [package]
-name = "nebula-runtime"
+name = "nebula-diagnostics"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
+nebula-syntax = { path = "../nebula-syntax" }
+nebula-load = { path = "../nebula-load" }
+nebula-types = { path = "../nebula-types" }
+nebula-runtime = { path = "../nebula-runtime" }
 nebula-ir = { path = "../nebula-ir" }
 miette.workspace = true
-thiserror.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-nebula-mcp = { path = "../nebula-mcp" }
 
 [dev-dependencies]
 nebula-syntax = { path = "../nebula-syntax" }
 nebula-types = { path = "../nebula-types" }
-nebula-load = { path = "../nebula-load" }
-jsonschema = "0.29"
-serde_json = "1"
-url = "2"

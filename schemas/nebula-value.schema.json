@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "nebula-value.schema.json",
+  "title": "NebulaValue",
+  "description": "JSON encoding of a Nebula runtime value as used in probe jsonl `args` and command-probe protocols.",
+  "$defs": {
+    "value": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "description": "Nebula Int."
+        },
+        {
+          "type": "number",
+          "not": { "type": "integer" },
+          "description": "Nebula Float."
+        },
+        {
+          "type": "boolean",
+          "description": "Nebula Bool."
+        },
+        {
+          "type": "string",
+          "description": "Nebula Str."
+        },
+        {
+          "type": "null",
+          "description": "Nebula None."
+        },
+        {
+          "type": "object",
+          "description": "Nebula Option<T> as `Some(inner)`.",
+          "required": ["Some"],
+          "additionalProperties": false,
+          "properties": {
+            "Some": { "$ref": "#/$defs/value" }
+          }
+        },
+        {
+          "type": "array",
+          "description": "Nebula List<T>.",
+          "items": { "$ref": "#/$defs/value" }
+        },
+        {
+          "type": "object",
+          "description": "Nebula struct value.",
+          "required": ["struct", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "struct": {
+              "type": "string",
+              "description": "Qualified or unqualified struct name."
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/value" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Nebula Map<K, V> encoded as a JSON object (not a struct or Option wrapper).",
+          "not": {
+            "anyOf": [
+              { "required": ["Some"] },
+              { "required": ["struct"] }
+            ]
+          },
+          "additionalProperties": { "$ref": "#/$defs/value" }
+        }
+      ]
+    }
+  },
+  "$ref": "#/$defs/value"
+}

@@ -8,6 +8,7 @@ nebula-ast = { path = "../nebula-ast" }
 nebula-types = { path = "../nebula-types" }
 miette.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 nebula-syntax = { path = "../nebula-syntax" }

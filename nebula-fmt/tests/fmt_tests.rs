@@ -14,12 +14,12 @@ mission main {
 }
 
 #[test]
-fn fmt_canonicalizes_brace_control_flow_to_end() {
+fn fmt_emits_end_delimited_control_flow() {
     let src = r#"
 mission main {
-  while true do {
+  while true do
     print("loop");
-  }
+  end
 }
 "#;
     let formatted = format(src).expect("format");

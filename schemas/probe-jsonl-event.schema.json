@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "probe-jsonl-event.schema.json",
+  "title": "NebulaProbeJsonlEvent",
+  "description": "One JSONL record emitted by `jsonl` probe handlers (including the built-in `log` probe). Written to stderr when no log path is configured, or appended to the manifest `path`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts", "probe", "args"],
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp in seconds (UTC)."
+    },
+    "probe": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Resolved probe name invoked via `call`."
+    },
+    "args": {
+      "type": "object",
+      "description": "Named probe arguments keyed by parameter name.",
+      "additionalProperties": {
+        "$ref": "nebula-value.schema.json"
+      }
+    }
+  },
+  "examples": [
+    {
+      "ts": 1718380800,
+      "probe": "log",
+      "args": {
+        "level": "info",
+        "message": "hello"
+      }
+    }
+  ]
+}

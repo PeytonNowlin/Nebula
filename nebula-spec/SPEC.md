@@ -20,7 +20,6 @@ sector mission fn struct let mut set if then else while do end emit
 probe call telemetry import return
 plus minus times div mod
 eq ne lt gt le ge
-less than greater than
 and or not
 true false
 Some None
@@ -65,16 +64,13 @@ stmt           = let_stmt | set_stmt | if_stmt | while_stmt | emit_stmt
                | return_stmt | expr_stmt | telemetry_stmt | call_stmt ;
 let_stmt       = "let" [ "mut" ] ident ":" type "=" expr ";" ;
 set_stmt       = "set" ident "=" expr ";" ;
-if_stmt        = "if" expr "then" block [ "else" block ] end_block_suffix ;
-while_stmt     = "while" expr "do" block end_block_suffix ;
-end_block_suffix = /* empty for brace blocks */ | "end" ;
+if_stmt        = "if" expr "then" end_block [ "else" end_block ] "end" ;
+while_stmt     = "while" expr "do" end_block "end" ;
 emit_stmt      = "emit" expr ";" ;
 return_stmt    = "return" expr ";" ;
 expr_stmt      = expr ";" ;
 call_stmt      = "call" ident "(" [ arg_list ] ")" ";" ;
-telemetry_stmt = "telemetry" block end_block_suffix ;
-block          = brace_block | end_block ;
-brace_block    = "{" { stmt } "}" ;
+telemetry_stmt = "telemetry" end_block "end" ;
 end_block      = { stmt } ;
 arg_list       = arg { "," arg } ;
 arg            = ident ":" expr ;
@@ -82,7 +78,7 @@ arg            = ident ":" expr ;
 expr           = or_expr ;
 or_expr        = and_expr { "or" and_expr } ;
 and_expr       = cmp_expr { "and" cmp_expr } ;
-cmp_expr       = add_expr { ( "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "less" "than" | "greater" "than" ) add_expr } ;
+cmp_expr       = add_expr { ( "eq" | "ne" | "lt" | "gt" | "le" | "ge" ) add_expr } ;
 add_expr       = mul_expr { ( "plus" | "minus" ) mul_expr } ;
 mul_expr       = unary_expr { ( "times" | "div" | "mod" ) unary_expr } ;
 unary_expr     = "not" unary_expr | postfix_expr ;
@@ -145,7 +141,8 @@ mission main {
   - **`command`** — external process with Nebula stdin/stdout JSON protocol
   - **`mcp`** — Model Context Protocol `tools/call` via stdio subprocess or Streamable HTTP
 - MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`.
-- `telemetry` blocks append structured JSONL traces for each statement executed within.
+- `telemetry` blocks append structured JSONL traces for each statement executed within. Each line matches [`schemas/telemetry-event.schema.json`](../schemas/telemetry-event.schema.json) (`step`: `let` | `set` | `probe`, `detail`: binding or probe name).
+- `jsonl` probe handlers (including built-in `log`) append lines matching [`schemas/probe-jsonl-event.schema.json`](../schemas/probe-jsonl-event.schema.json). Probe argument values use the encoding in [`schemas/nebula-value.schema.json`](../schemas/nebula-value.schema.json).
 - `emit` and `return` both exit the current function with a value.
 - Field access uses postfix `.` on any expression: `p.x`, `geo.origin().x`, `(get_point()).x`, and chained access `p.coords.x`. A suffix `.ident` followed by `(` or `{` forms a qualified call or struct literal when the object is a name or field-access chain (e.g. `math.double(n)`, `geo.Point{ x: 0, y: 0 }`).
 - Empty collection literals need a type when no context is available. `[]` defaults to `List<Int>` and `{}` defaults to `Map<Str, Int>`. When a surrounding annotation, parameter type, return type, or struct field type expects `List<T>` or `Map<K, V>`, an empty literal uses those type parameters (e.g. `let xs: List<Str> = []`, `return []` in a function returning `List<Str>`).
@@ -153,7 +150,8 @@ mission main {
 
 ### 7.1 Numeric semantics
 
-- Arithmetic (`plus`, `minus`, `times`, `div`, `mod`) and ordering (`less than`/`lt`, `greater than`/`gt`, `le`, `ge`) require **both operands to have the same numeric type** — either both `Int` or both `Float`. There is no implicit Int↔Float coercion; convert explicitly with `int_to_float` / `float_to_int`.
+- Arithmetic (`plus`, `minus`, `times`, `div`, `mod`) and ordering (`lt`, `gt`, `le`, `ge`) require **both operands to have the same numeric type** — either both `Int` or both `Float`. There is no implicit Int↔Float coercion; convert explicitly with `int_to_float` / `float_to_int`. Synonyms such as `less than` / `greater than` are rejected (`NEB-S004`); use `lt` / `gt`.
+- `if`, `while`, and `telemetry` bodies use `end`-delimited blocks only; brace blocks are rejected (`NEB-S005`).
 - `plus` is additionally defined on `Str` (concatenation) when both operands are `Str`.
 - Integer `div` **truncates toward zero** and integer `mod` returns a remainder whose **sign follows the dividend** (C/Rust semantics, not Python floor division). `(0 minus 7) div 2` is `-3`; `(0 minus 7) mod 2` is `-1`.
 - Float `div` is true division; float `mod` follows the dividend's sign (`fmod`). Float division/modulo by `0.0` also raises `NEB-R004`.
@@ -173,6 +171,8 @@ Both backends (interpreter and Python transpiler) implement these semantics iden
 | `NEB-T` | Type |
 | `NEB-R` | Runtime |
 | `NEB-R004` | Division by zero (`div` / `mod` with zero divisor) |
+| `NEB-R005` | List index out of bounds (`at` with negative or too-large index) |
+| `NEB-R006` | Map key not found (`get` on an absent key) |
 | `NEB-P` | Probe |
 | `NEB-P004` | MCP transport / protocol failure |
 | `NEB-L` | Module load / import |
@@ -218,8 +218,11 @@ Nebula can be lowered to IR and transpiled to Python (`nebula compile --target p
 Provided by the runtime standard library:
 
 - `print(value: Str) -> Void`
-- `len(value: List<T>) -> Int`
-- `push(list: List<T>, value: T) -> Void`
+- `len(value: List<T> | Map<K, V> | Str) -> Int` (string length is in code points)
+- `push(list: List<T>, value: T) -> Void` (first argument must be a list variable)
+- `at(list: List<T>, index: Int) -> T` (0-based; out-of-range or negative index fails with `NEB-R005`)
+- `get(map: Map<K, V>, key: K) -> V` (missing key fails with `NEB-R006`)
+- `has(map: Map<K, V>, key: K) -> Bool`
 - `str_to_int(s: Str) -> Int`
 - `int_to_str(n: Int) -> Str`
 - `str_to_float(s: Str) -> Float`

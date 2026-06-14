@@ -62,7 +62,7 @@ fn parse_if_while_with_end() {
 mission main {
   let mut i: Int = 0;
 
-  while i less than 3 do
+  while i lt 3 do
     set i = i plus 1;
   end
 
@@ -93,15 +93,15 @@ mission main {
 }
 
 #[test]
-fn parse_brace_blocks_still_work() {
+fn parse_end_blocks_for_control_flow() {
     let src = r#"
 mission main {
-  while true do {
+  while true do
     print("loop");
-  }
+  end
 }
 "#;
-    parse(src).expect("brace blocks should still parse");
+    parse(src).expect("end blocks should parse");
 }
 
 #[test]
@@ -134,10 +134,10 @@ fn parse_probe_and_telemetry() {
 mission main {
   probe log(level: Str, message: Str) -> Void;
 
-  telemetry {
+  telemetry
     call log(level: "info", message: "starting");
     print("done");
-  }
+  end
 }
 "#;
     parse(src).expect("probe and telemetry should parse");

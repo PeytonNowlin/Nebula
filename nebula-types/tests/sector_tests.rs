@@ -6,11 +6,11 @@ fn none_unifies_with_any_option_type() {
     let src = r#"
 sector data {
   fn greet(name: Option<Str>) -> Str {
-    if name eq None then {
+    if name eq None then
       return "anonymous";
-    } else {
+    else
       return "hello";
-    }
+    end
   }
 }
 

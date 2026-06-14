@@ -1,8 +1,11 @@
+mod json;
+
 pub type Span = std::ops::Range<usize>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Spanned<T> {
     pub node: T,
+    #[serde(serialize_with = "json::serialize_span")]
     pub span: Span,
 }
 
@@ -12,44 +15,44 @@ impl<T> Spanned<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Program {
     pub items: Vec<Spanned<TopLevel>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum TopLevel {
     Import(Spanned<String>),
     Sector(Spanned<Sector>),
     Mission(Spanned<Mission>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Sector {
     pub name: Spanned<String>,
     pub items: Vec<SectorItem>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum SectorItem {
     Fn(Spanned<FnDecl>),
     Struct(Spanned<StructDecl>),
     Probe(Spanned<ProbeDecl>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Mission {
     pub name: Spanned<String>,
     pub items: Vec<MissionItem>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum MissionItem {
     Stmt(Spanned<Stmt>),
     Probe(Spanned<ProbeDecl>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct FnDecl {
     pub name: Spanned<String>,
     pub params: Vec<Spanned<Param>>,
@@ -57,32 +60,32 @@ pub struct FnDecl {
     pub body: Vec<Spanned<Stmt>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct StructDecl {
     pub name: Spanned<String>,
     pub fields: Vec<Spanned<FieldDecl>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct FieldDecl {
     pub name: Spanned<String>,
     pub ty: Spanned<Type>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProbeDecl {
     pub name: Spanned<String>,
     pub params: Vec<Spanned<Param>>,
     pub return_type: Spanned<Type>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Param {
     pub name: Spanned<String>,
     pub ty: Spanned<Type>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum Stmt {
     Let {
         mutable: bool,
@@ -115,13 +118,13 @@ pub enum Stmt {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct NamedArg {
     pub name: Spanned<String>,
     pub value: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum Expr {
     Int(i64),
     Float(f64),
@@ -155,12 +158,12 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum UnaryOp {
     Not,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum BinaryOp {
     Plus,
     Minus,
@@ -177,19 +180,19 @@ pub enum BinaryOp {
     Or,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct MapEntry {
     pub key: Spanned<Expr>,
     pub value: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct FieldInit {
     pub name: Spanned<String>,
     pub value: Spanned<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum Type {
     Int,
     Float,
