@@ -28,7 +28,7 @@ mission main {
     let ir = lower(&typed).expect("lower");
 
     let mut runtime = Runtime::new(&ir)
-        .with_probe_manifest(manifest_path)
+        .with_probe_manifest(manifest_path, None)
         .expect("load probe manifest");
     runtime.run(&ir).expect("MCP probe should succeed");
 }
@@ -187,7 +187,7 @@ fn mcp_manifest_unknown_server_is_rejected() {
 
     let mut host = RegistryProbeHost::with_defaults();
     let err = host
-        .load_manifest(&manifest_path)
+        .load_manifest(&manifest_path, None)
         .expect_err("unknown MCP server should fail");
     assert!(
         err.to_string().contains("missing"),
@@ -219,7 +219,7 @@ fn mcp_transport_error_reports_neb_p004() {
     .expect("write manifest");
 
     let mut host = RegistryProbeHost::with_defaults();
-    host.load_manifest(&manifest_path).expect("load manifest");
+    host.load_manifest(&manifest_path, None).expect("load manifest");
     let err = host
         .invoke(&ProbeInvocation {
             name: "notify",

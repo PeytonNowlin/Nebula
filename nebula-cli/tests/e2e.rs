@@ -142,7 +142,7 @@ fn cli_check_json_emits_empty_array_on_success() {
 }
 
 #[test]
-fn cli_run_json_emits_structured_diagnostics_on_type_error() {
+fn cli_run_json_emits_structured_run_record_on_type_error() {
     let path = workspace_root().join("examples/hello.neb");
     let mut bad = std::fs::read_to_string(&path).expect("read hello");
     bad.push_str("\nmission broken { let x: Int = \"nope\"; }\n");
@@ -156,10 +156,38 @@ fn cli_run_json_emits_structured_diagnostics_on_type_error() {
         .output()
         .expect("spawn nebula run --json");
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let parsed: Vec<serde_json::Value> =
-        serde_json::from_str(stderr.trim()).expect("stderr should be JSON array");
-    assert!(parsed.iter().any(|diag| diag["code"] == "NEB-T002"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout should be run record JSON");
+    assert_eq!(parsed["exit"], 1);
+    assert!(parsed["program"].as_str().is_some_and(|p| p.contains("nebula-bad-run-json.neb")));
+    let diagnostics = parsed["diagnostics"].as_array().expect("diagnostics array");
+    assert!(diagnostics.iter().any(|diag| diag["code"] == "NEB-T002"));
+    assert!(parsed["probe_events"].as_array().expect("probe_events").is_empty());
+    assert!(parsed["duration_ms"].as_u64().is_some());
+}
+
+#[test]
+fn cli_run_json_emits_structured_run_record_on_success() {
+    let output = Command::new(nebula_bin())
+        .arg("run")
+        .arg("--json")
+        .arg(workspace_root().join("examples/hello.neb"))
+        .output()
+        .expect("spawn nebula run --json");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout should be run record JSON");
+    assert_eq!(parsed["exit"], 0);
+    assert!(parsed["diagnostics"].as_array().expect("diagnostics").is_empty());
+    assert!(parsed["probe_events"].as_array().is_some());
+    assert!(parsed["duration_ms"].as_u64().is_some());
+    assert_eq!(
+        parsed["printed"],
+        serde_json::json!(["Hello from Nebula"])
+    );
+    assert_eq!(parsed["return_value"], serde_json::Value::Null);
+    assert_eq!(parsed["probes_called"], serde_json::json!([]));
 }
 
 #[test]
@@ -203,6 +231,7 @@ fn cli_probes_list_json_reports_bundle_handlers() {
         ("http_get", "http_get"),
         ("json_parse", "json_parse"),
         ("env_get", "env_get"),
+        ("secret_get", "secret_get"),
     ] {
         assert!(
             probes.iter().any(|probe| probe["name"] == name && probe["kind"] == kind),

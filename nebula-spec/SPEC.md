@@ -141,20 +141,28 @@ mission main {
   - **`jsonl`** — structured JSONL logging (built-in `log` probe)
   - **`command`** — external process with Nebula stdin/stdout JSON protocol
   - **`mcp`** — Model Context Protocol `tools/call` via stdio subprocess or Streamable HTTP
-  - **Bundle handlers** (manifest-only; not language builtins): `read_file`, `write_file`, `http_get`, `json_parse`, `env_get`. See [`probes/bundle.json`](../probes/bundle.json).
+  - **Bundle handlers** (manifest-only; not language builtins): `read_file`, `write_file`, `http_get`, `json_parse`, `env_get`, `secret_get`. See [`probes/bundle.json`](../probes/bundle.json).
 - Canonical bundle signatures:
   - `probe read_file(path: Str) -> Str`
   - `probe write_file(path: Str, content: Str) -> Void`
   - `probe http_get(url: Str) -> Str`
   - `probe json_parse(text: Str) -> Map<Str, Str>` (nested JSON values are supported at runtime)
-  - `probe env_get(key: Str) -> Option<Str>`
+  - `probe env_get(key: Str) -> Option<Str>` — non-secret operational environment variables
+  - `probe secret_get(name: Str) -> Option<Str>` — manifest secrets by logical name (values never in source)
+- Probe manifests may declare a top-level `secrets` map. Each entry resolves from `{ "env": "VAR" }` or an inline `{ "value": "..." }` (tests/dev only). Resolved values inject into handler config via `${secret:name}` templates (MCP `env`/`headers`, `command` `env`/argv, `http_get` `headers`) and are readable through `secret_get`. `nebula-host` `HostConfig.secrets` overlays manifest entries at run time. Secret values are never emitted by `nebula probes list`.
 - MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`. Agents can introspect manifest bindings with `nebula probes list --probes <path>`; add `--mcp` to query each server's live `tools/list` catalog.
-- `telemetry` blocks append structured JSONL traces for each statement executed within. Each line matches [`schemas/telemetry-event.schema.json`](../schemas/telemetry-event.schema.json) (`step`: `let` | `set` | `probe`, `detail`: binding or probe name).
+- `telemetry` blocks append structured JSONL traces for each statement executed within. Each line matches [`schemas/telemetry-event.schema.json`](../schemas/telemetry-event.schema.json):
+  - `let` / `set` — `detail` is the binding name; `value` is the serialized binding value after the statement (nebula-value encoding).
+  - `probe` — `detail` is the resolved probe name; `args` maps argument names to serialized values; `result` is a return summary (full scalar values, `null` for `Void`, or `{ "_summary": ... }` for large composites/strings).
 - `jsonl` probe handlers (including built-in `log`) append lines matching [`schemas/probe-jsonl-event.schema.json`](../schemas/probe-jsonl-event.schema.json). Probe argument values use the encoding in [`schemas/nebula-value.schema.json`](../schemas/nebula-value.schema.json).
 - `emit` and `return` both exit the current function with a value.
 - Field access uses postfix `.` on any expression: `p.x`, `geo.origin().x`, `(get_point()).x`, and chained access `p.coords.x`. A suffix `.ident` followed by `(` or `{` forms a qualified call or struct literal when the object is a name or field-access chain (e.g. `math.double(n)`, `geo.Point{ x: 0, y: 0 }`).
 - Empty collection literals need a type when no context is available. `[]` defaults to `List<Int>` and `{}` defaults to `Map<Str, Int>`. When a surrounding annotation, parameter type, return type, or struct field type expects `List<T>` or `Map<K, V>`, an empty literal uses those type parameters (e.g. `let xs: List<Str> = []`, `return []` in a function returning `List<Str>`).
 - Integer `div` and `mod` with a zero divisor fail at runtime with `NEB-R004` (division by zero).
+- The interpreter enforces **resource limits** on `nebula run` and `nebula-host` `run_*` paths (defaults: 30s wall-clock, 1,000,000 global `while` iterations, 64 MiB approximate memory). Direct `Runtime::new` in tests is unlimited unless configured. Limits are approximate — memory accounting estimates `Value` footprint, not process RSS. Infinite recursion is not caught by the loop counter.
+  - `NEB-R008` — execution exceeded time limit
+  - `NEB-R009` — while-loop iteration limit exceeded
+  - `NEB-R010` — approximate memory limit exceeded
 
 ### 7.1 Numeric semantics
 
@@ -186,14 +194,19 @@ Both backends (interpreter and Python transpiler) implement these semantics iden
 | `NEB-P004` | MCP transport / protocol failure |
 | `NEB-L` | Module load / import |
 
-`nebula check --json` and `nebula run --json` emit these as a JSON array of diagnostic records (on stderr) matching [`schemas/diagnostic.schema.json`](../schemas/diagnostic.schema.json) — each record has `code`, `message`, and an optional `span` (`file`, `start`, `end`, and 1-based `line`/`column` when source is available). The same shape is returned by the `nebula-host` embedding crate.
+`nebula check --json` emits a JSON array of diagnostic records (on stderr) matching [`schemas/diagnostic.schema.json`](../schemas/diagnostic.schema.json) — each record has `code`, `message`, and an optional `span` (`file`, `start`, `end`, and 1-based `line`/`column` when source is available). The same shape is returned by the `nebula-host` embedding crate.
+
+`nebula run --json` emits one run record on stdout matching [`schemas/run-record.schema.json`](../schemas/run-record.schema.json): `{ program, exit, diagnostics[], telemetry_path?, probe_events[], duration_ms }`. `probe_events` collects jsonl probe records ([`schemas/probe-jsonl-event.schema.json`](../schemas/probe-jsonl-event.schema.json)) captured during execution. `RunResult.record` exposes the same object for embedders.
 
 ## 9. Probe host manifest (MCP)
 
-Probe manifests may include an `mcp_servers` map and probe bindings with `"kind": "mcp"`:
+Probe manifests may include a `secrets` map, `mcp_servers`, and probe bindings:
 
 ```json
 {
+  "secrets": {
+    "api_token": { "env": "OPENAI_API_KEY" }
+  },
   "mcp_servers": {
     "local": {
       "transport": "stdio",
@@ -202,19 +215,25 @@ Probe manifests may include an `mcp_servers` map and probe bindings with `"kind"
     "remote": {
       "transport": "http",
       "url": "http://127.0.0.1:8765/mcp",
-      "headers": { "Authorization": "Bearer token" }
+      "headers": { "Authorization": "Bearer ${secret:api_token}" }
     }
   },
   "probes": {
-    "notify": { "kind": "mcp", "server": "local", "tool": "notify" }
+    "notify": { "kind": "mcp", "server": "local", "tool": "notify" },
+    "secret_get": { "kind": "secret_get" },
+    "fetch": {
+      "kind": "http_get",
+      "headers": { "Authorization": "Bearer ${secret:api_token}" }
+    }
   }
 }
 ```
 
+- **`secrets`** — logical names resolved at manifest load from environment variables or inline test values. Use `${secret:name}` in handler strings to inject without putting credentials in `.neb` source.
 - **stdio** — spawn MCP server as subprocess; JSON-RPC over newline-delimited stdin/stdout
 - **http** — Streamable HTTP POST to `url` with optional `headers`
 - Probe `call` arguments are passed as MCP tool `arguments`
-- Unknown server references or invalid transport config fail at manifest load time
+- Unknown server references, unset secret env vars, or invalid transport config fail at manifest load time
 
 ## 10. Python transpilation
 
@@ -253,3 +272,11 @@ String operations (all indices and lengths are in Unicode code points; both back
 - `to_lower(s: Str) -> Str`
 - `trim(s: Str) -> Str` (removes leading/trailing whitespace)
 - `replace(s: Str, from: Str, to: Str) -> Str` (replaces all non-overlapping occurrences)
+- `split(s: Str, sep: Str) -> List<Str>` (splits on each `sep`; empty `sep` is a runtime error)
+- `join(parts: List<Str>, sep: Str) -> Str` (joins with `sep` between elements)
+
+Integer helpers:
+
+- `abs(n: Int) -> Int` (overflows on `i64::MIN`, raising `NEB-R007`)
+- `min(a: Int, b: Int) -> Int`
+- `max(a: Int, b: Int) -> Int`

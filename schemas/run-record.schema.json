@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-record.schema.json",
+  "title": "NebulaRunRecord",
+  "description": "One structured record describing a single `nebula run` execution. Emitted as JSON on stdout when `--json` is passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "program",
+    "exit",
+    "diagnostics",
+    "probe_events",
+    "duration_ms",
+    "printed",
+    "probes_called"
+  ],
+  "properties": {
+    "program": {
+      "type": "string",
+      "description": "Entry program path, or an in-memory label such as `<source>` for `run_source`."
+    },
+    "exit": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "Process-style exit status: 0 for success, 1 for compile or runtime failure."
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "diagnostic.schema.json" },
+      "description": "Structured diagnostics. Empty on success."
+    },
+    "telemetry_path": {
+      "type": "string",
+      "description": "Path passed to `--telemetry`, when telemetry was enabled for the run."
+    },
+    "probe_events": {
+      "type": "array",
+      "items": { "$ref": "probe-jsonl-event.schema.json" },
+      "description": "Jsonl probe events captured during execution (e.g. `log` probe calls)."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock duration of the full run (compile plus execute) in milliseconds."
+    },
+    "printed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lines emitted by `print` during execution (captured, not written to stdout in `--json` mode)."
+    },
+    "return_value": {
+      "$ref": "nebula-value.schema.json",
+      "description": "Mission return value serialized to JSON. Omitted on compile/runtime failure."
+    },
+    "probes_called": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/probeCallRecord" },
+      "description": "Every probe invocation during execution (`call` and probe expressions), with redacted secrets."
+    }
+  },
+  "$defs": {
+    "probeCallRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "args", "result"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Resolved probe name."
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": { "$ref": "nebula-value.schema.json" },
+          "description": "Call arguments. `secret_get` name arguments are redacted."
+        },
+        "result": {
+          "$ref": "#/$defs/probeResult",
+          "description": "Probe return value or summary."
+        }
+      }
+    },
+    "probeResult": {
+      "oneOf": [
+        { "$ref": "nebula-value.schema.json" },
+        {
+          "type": "object",
+          "required": ["_summary"],
+          "additionalProperties": true,
+          "properties": {
+            "_summary": { "type": "string" },
+            "len": { "type": "integer" },
+            "preview": { "type": "string" },
+            "name": { "type": "string" },
+            "fields": { "type": "integer" },
+            "inner": {},
+            "redacted": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "program": "examples/hello.neb",
+      "exit": 0,
+      "diagnostics": [],
+      "probe_events": [],
+      "duration_ms": 12,
+      "printed": ["Hello from Nebula"],
+      "return_value": null,
+      "probes_called": []
+    },
+    {
+      "program": "examples/runbook.neb",
+      "exit": 0,
+      "diagnostics": [],
+      "telemetry_path": "trace.jsonl",
+      "probe_events": [
+        {
+          "ts": 1718380800,
+          "probe": "log",
+          "args": { "level": "info", "message": "1" }
+        }
+      ],
+      "duration_ms": 42,
+      "printed": [],
+      "return_value": null,
+      "probes_called": [
+        {
+          "name": "log",
+          "args": { "level": "info", "message": "1" },
+          "result": null
+        }
+      ]
+    }
+  ]
+}

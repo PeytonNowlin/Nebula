@@ -9,7 +9,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 - **Keyword-based syntax** — arithmetic and comparisons use words instead of symbols, so parsers and agents can read source without ambiguity.
 - **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
 - **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (`jsonl`, external `command`, or **MCP** via `--probes` manifest).
-- **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
+- **Telemetry** — `telemetry` blocks emit structured JSONL traces with binding values after `let`/`set` and probe args + result summaries for each `call`.
 - **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
 - **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation; deprecated syntax forms are rejected at parse time (`NEB-S004`, `NEB-S005`).
 - **Structured JSON I/O** — `check`, `run`, `parse`, `ir`, and `probes list` support `--json` for machine-readable diagnostics, AST export, IR export, and probe introspection.
@@ -51,7 +51,7 @@ The `nebula` binary provides seven subcommands: `check`, `parse`, `ir`, `fmt`, `
 | `nebula check <file>` | Parse, resolve imports, and typecheck without running |
 | `nebula check <file> --json` | On success, print `[]` to stdout; on failure, print a JSON diagnostic array to stderr |
 | `nebula run <file>` | Typecheck and execute via the interpreter |
-| `nebula run <file> --json` | Same as `check --json` on failure; stdout is reserved for program output when successful |
+| `nebula run <file> --json` | Emit one structured run record JSON object on stdout (see run record schema below) |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
 | `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
 
@@ -77,7 +77,26 @@ The `nebula` binary provides seven subcommands: `check`, `parse`, `ir`, `fmt`, `
 
 ### JSON diagnostic format
 
-When `--json` is passed to `check` or `run`, failures emit a JSON array of diagnostic objects on **stderr**:
+When `--json` is passed to `check`, failures emit a JSON array of diagnostic objects on **stderr**:
+
+When `--json` is passed to `run`, stdout is always one run record object (success or failure):
+
+```json
+{
+  "program": "examples/runbook.neb",
+  "exit": 0,
+  "diagnostics": [],
+  "telemetry_path": "trace.jsonl",
+  "probe_events": [
+    { "ts": 1718380800, "probe": "log", "args": { "level": "info", "message": "1" } }
+  ],
+  "duration_ms": 42
+}
+```
+
+Schema: [`schemas/run-record.schema.json`](schemas/run-record.schema.json). `probe_events` collects jsonl probe output (e.g. `log` calls); `diagnostics` is empty on success.
+
+`check --json` failure format:
 
 ```json
 [
@@ -138,7 +157,16 @@ assert!(run.ok);
 assert_eq!(run.printed, vec!["Hello from Nebula"]);
 ```
 
-`HostConfig` supports probe manifests, telemetry paths, and a custom source label for diagnostics. `CheckResult` and `RunResult` return `Vec<DiagnosticJson>` with the same shape as CLI `--json` output.
+`HostConfig` supports probe manifests, runtime secret overlays, telemetry paths, interpreter resource limits, and a custom source label for diagnostics. `run_*` applies agent-safe defaults (30s timeout, 1M while-loop iterations, 64 MiB memory) unless `resource_limits: ResourceLimits::unlimited()` is set. `RunResult` includes a [`RunRecord`](schemas/run-record.schema.json) with program path, exit status, diagnostics, telemetry path, captured probe events, and duration.
+
+```bash
+# Defaults: 30s / 1M iterations / 64 MiB
+cargo run -- run examples/hello.neb
+
+# Override or disable
+cargo run -- run examples/hello.neb --max-runtime-ms 5000
+cargo run -- run examples/hello.neb --no-resource-limits
+```
 
 ## JSON schemas
 
@@ -146,7 +174,8 @@ Structured runtime events are documented as JSON Schema files under [`schemas/`]
 
 | Schema | Used by |
 |--------|---------|
-| [`diagnostic.schema.json`](schemas/diagnostic.schema.json) | `check --json` / `run --json` error records and `nebula-host` `DiagnosticJson` (`code`, `message`, optional `span`) |
+| [`diagnostic.schema.json`](schemas/diagnostic.schema.json) | `check --json` error records and `nebula-host` `DiagnosticJson` (`code`, `message`, optional `span`) |
+| [`run-record.schema.json`](schemas/run-record.schema.json) | `run --json` execution record (`program`, `exit`, `diagnostics`, `telemetry_path`, `probe_events`, `duration_ms`) |
 | [`telemetry-event.schema.json`](schemas/telemetry-event.schema.json) | `telemetry` block JSONL traces (`step`, `detail`) |
 | [`probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json) | `jsonl` probe handler output (`ts`, `probe`, `args`) |
 | [`nebula-value.schema.json`](schemas/nebula-value.schema.json) | Probe argument values in JSONL and command-probe protocols |
@@ -236,6 +265,11 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 | `to_lower` | `fn(s: Str) -> Str` | |
 | `trim` | `fn(s: Str) -> Str` | Strip leading/trailing whitespace |
 | `replace` | `fn(s: Str, from: Str, to: Str) -> Str` | Replace all occurrences |
+| `split` | `fn(s: Str, sep: Str) -> List<Str>` | Split on `sep`; empty `sep` errors |
+| `join` | `fn(parts: List<Str>, sep: Str) -> Str` | Join with `sep` |
+| `abs` | `fn(n: Int) -> Int` | Magnitude; overflows on `i64::MIN` (`NEB-R007`) |
+| `min` | `fn(a: Int, b: Int) -> Int` | Smaller of two |
+| `max` | `fn(a: Int, b: Int) -> Int` | Larger of two |
 
 ### Numeric semantics
 
@@ -254,7 +288,7 @@ Probes declare capabilities the host is expected to provide. `call` invokes them
 | `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
 | `command` | External process with Nebula's stdin/stdout JSON protocol |
 | `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
-| `read_file` / `write_file` / `http_get` / `json_parse` / `env_get` | Native bundle handlers (manifest-only; still require `probe` declarations in source) |
+| `read_file` / `write_file` / `http_get` / `json_parse` / `env_get` / `secret_get` | Native bundle handlers (manifest-only; still require `probe` declarations in source) |
 
 **Default probe bundle** — [`probes/bundle.json`](probes/bundle.json) wires `log` plus five I/O probes for orchestration without custom command scripts:
 
@@ -263,6 +297,8 @@ cargo run -- run examples/io_agent.neb --probes probes/bundle.json
 ```
 
 Bundle probes inherit the host process permissions; treat manifests as trusted configuration.
+
+**Secrets** — declare credentials in the manifest `secrets` map (resolved from env vars), inject into handler config with `${secret:name}` templates, and read by logical name via `secret_get` (never put secret values in `.neb` source). `HostConfig.secrets` overlays manifest entries for embedders.
 
 **Command probes** use a stdin/stdout JSON protocol:
 

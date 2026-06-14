@@ -193,7 +193,9 @@ impl<'a> ModuleEmitter<'a> {
         self.write_line("telemetry_enabled,");
         self.indent = 0;
         self.write_line(")");
-        self.write_line("from nebula_runtime.telemetry import log_telemetry");
+        self.write_line(
+            "from nebula_runtime.telemetry import log_telemetry, telemetry_binding_value",
+        );
         self.write_line("from nebula_runtime.truthy import nebula_truthy");
         self.write_line("from nebula_runtime.values import StructValue, nebula_field, nebula_key");
         self.write_line("");
@@ -346,11 +348,11 @@ impl<'a> ModuleEmitter<'a> {
         match stmt {
             IrStmt::Let { name, value, .. } => {
                 self.write_line(&format!("{name} = {}", self.emit_expr(value)?));
-                self.write_telemetry("let", name);
+                self.write_binding_telemetry("let", name);
             }
             IrStmt::Set { name, value } => {
                 self.write_line(&format!("{name} = {}", self.emit_expr(value)?));
-                self.write_telemetry("set", name);
+                self.write_binding_telemetry("set", name);
             }
             IrStmt::If {
                 condition,
@@ -400,7 +402,6 @@ impl<'a> ModuleEmitter<'a> {
                     python_string(&resolved),
                     pairs.join(", ")
                 ));
-                self.write_telemetry("probe", &resolved);
             }
             IrStmt::Telemetry { body } => {
                 self.write_line("_prev_telemetry = telemetry_enabled()");
@@ -420,11 +421,12 @@ impl<'a> ModuleEmitter<'a> {
         Ok(())
     }
 
-    fn write_telemetry(&mut self, step: &str, detail: &str) {
+    fn write_binding_telemetry(&mut self, step: &str, name: &str) {
         self.write_line(&format!(
-            "log_telemetry(_NEBULA_TELEMETRY_PATH, telemetry_enabled(), {}, {})",
+            "log_telemetry(_NEBULA_TELEMETRY_PATH, telemetry_enabled(), {}, {}, value=telemetry_binding_value({}))",
             python_string(step),
-            python_string(detail)
+            python_string(name),
+            name
         ));
     }
 

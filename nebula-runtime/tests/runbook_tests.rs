@@ -180,6 +180,16 @@ fn runbook_happy_path_records_telemetry_and_probe_events() {
         "expected telemetry for let/set/probe steps, got {}",
         telemetry_lines.len()
     );
+    let first_set: JsonValue =
+        serde_json::from_str(telemetry_lines.iter().find(|line| line.contains("\"set\"")).expect("set line"))
+            .expect("parse set telemetry");
+    assert_eq!(first_set["detail"], "attempts");
+    assert!(first_set.get("value").is_some(), "set telemetry should include value");
+    let first_probe: JsonValue =
+        serde_json::from_str(telemetry_lines.iter().find(|line| line.contains("\"probe\"")).expect("probe line"))
+            .expect("parse probe telemetry");
+    assert!(first_probe.get("args").is_some(), "probe telemetry should include args");
+    assert!(first_probe.get("result").is_some(), "probe telemetry should include result");
 
     let probe_source = fs::read_to_string(&probe_log).expect("read probe log");
     let probe_lines: Vec<_> = probe_source
@@ -256,7 +266,7 @@ mission main {
         .ir;
     let mut runtime = Runtime::new(&ir)
         .with_capture_print(true)
-        .with_probe_manifest(&manifest_path)
+        .with_probe_manifest(&manifest_path, None)
         .expect("load manifest");
     runtime.run(&ir).expect("run failure runbook");
 

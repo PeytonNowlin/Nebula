@@ -9,9 +9,12 @@ use nebula_mcp::{McpConnectionManager, McpError};
 use serde::{Deserialize, Serialize};
 
 use crate::probe_bundle::{
-    invoke_env_get, invoke_http_get, invoke_json_parse, invoke_read_file, invoke_write_file,
+    invoke_env_get, invoke_http_get, invoke_json_parse, invoke_read_file, invoke_secret_get,
+    invoke_write_file,
 };
-use crate::probe_manifest::{read_probe_manifest, validate_manifest, ProbeBinding};
+use crate::probe_manifest::{prepare_probe_manifest, read_probe_manifest, validate_manifest, ProbeBinding};
+use crate::secrets::SecretsStore;
+use crate::value_json::{json_to_value, value_to_json};
 use crate::{RuntimeError, Value};
 
 /// A probe invocation dispatched to the host.
@@ -25,32 +28,41 @@ pub trait ProbeHost {
     fn invoke(&mut self, call: &ProbeInvocation<'_>) -> Result<Value, RuntimeError>;
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct ProbeEvent {
-    ts: u64,
-    probe: String,
-    args: HashMap<String, serde_json::Value>,
+/// One JSONL-style record emitted by `jsonl` probe handlers (including built-in `log`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProbeJsonlEvent {
+    pub ts: u64,
+    pub probe: String,
+    pub args: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
 enum Handler {
     Jsonl { path: Option<PathBuf> },
-    Command { command: Vec<String> },
+    Command {
+        command: Vec<String>,
+        env: HashMap<String, String>,
+    },
     Mcp {
         server: String,
         tool: Option<String>,
     },
     ReadFile,
     WriteFile,
-    HttpGet,
+    HttpGet {
+        headers: HashMap<String, String>,
+    },
     JsonParse,
     EnvGet,
+    SecretGet,
 }
 
 /// Default probe host: built-in handlers plus optional manifest overrides.
 pub struct RegistryProbeHost {
     handlers: HashMap<String, Handler>,
     mcp_manager: Option<McpConnectionManager>,
+    secrets: SecretsStore,
+    probe_events: Vec<ProbeJsonlEvent>,
 }
 
 impl RegistryProbeHost {
@@ -65,12 +77,24 @@ impl RegistryProbeHost {
         Self {
             handlers,
             mcp_manager: None,
+            secrets: SecretsStore::new(),
+            probe_events: Vec::new(),
         }
     }
 
-    pub fn load_manifest(&mut self, path: &Path) -> Result<(), RuntimeError> {
+    pub fn take_probe_events(&mut self) -> Vec<ProbeJsonlEvent> {
+        std::mem::take(&mut self.probe_events)
+    }
+
+    pub fn load_manifest(
+        &mut self,
+        path: &Path,
+        secrets_overlay: Option<&SecretsStore>,
+    ) -> Result<(), RuntimeError> {
         let manifest = read_probe_manifest(path)?;
         validate_manifest(&manifest)?;
+        let (manifest, secrets) = prepare_probe_manifest(manifest, secrets_overlay)?;
+        self.secrets = secrets;
 
         if !manifest.mcp_servers.is_empty() {
             self.mcp_manager = Some(
@@ -106,13 +130,18 @@ impl RegistryProbeHost {
 
 impl ProbeHost for RegistryProbeHost {
     fn invoke(&mut self, call: &ProbeInvocation<'_>) -> Result<Value, RuntimeError> {
-        let handler = self.handler_for(call.name).ok_or(RuntimeError::ProbeNotImplemented {
-            name: call.name.to_string(),
-        })?;
+        let handler = self
+            .handler_for(call.name)
+            .ok_or(RuntimeError::ProbeNotImplemented {
+                name: call.name.to_string(),
+            })?
+            .clone();
 
         match handler {
-            Handler::Jsonl { path } => invoke_jsonl_log(call, path.as_deref()),
-            Handler::Command { command } => invoke_command_probe(call, command),
+            Handler::Jsonl { path } => {
+                invoke_jsonl_log(call, path.as_deref(), &mut self.probe_events)
+            }
+            Handler::Command { command, env } => invoke_command_probe(call, &command, &env),
             Handler::Mcp { server, tool } => {
                 let manager = self.mcp_manager.as_ref().ok_or_else(|| RuntimeError::Error {
                     message: format!(
@@ -120,22 +149,30 @@ impl ProbeHost for RegistryProbeHost {
                         call.name
                     ),
                 })?;
-                let tool_name = Self::resolve_tool_name(call.name, tool);
+                let tool_name = Self::resolve_tool_name(call.name, &tool);
                 let args = call
                     .args
                     .iter()
                     .map(|(k, v)| (k.clone(), value_to_json(v)))
                     .collect();
                 manager
-                    .call_tool(server, &tool_name, args)
+                    .call_tool(&server, &tool_name, args)
                     .map_err(|err| mcp_invoke_error(call.name, err))?;
                 Ok(Value::None)
             }
             Handler::ReadFile => invoke_read_file(call.name, &call.args),
             Handler::WriteFile => invoke_write_file(call.name, &call.args),
-            Handler::HttpGet => invoke_http_get(call.name, &call.args),
+            Handler::HttpGet { headers } => {
+                let header_ref = if headers.is_empty() {
+                    None
+                } else {
+                    Some(&headers)
+                };
+                invoke_http_get(call.name, &call.args, header_ref)
+            }
             Handler::JsonParse => invoke_json_parse(call.name, &call.args),
             Handler::EnvGet => invoke_env_get(call.name, &call.args),
+            Handler::SecretGet => invoke_secret_get(call.name, &call.args, &self.secrets),
         }
     }
 }
@@ -165,8 +202,14 @@ fn mcp_invoke_error(probe_name: &str, err: McpError) -> RuntimeError {
 fn invoke_jsonl_log(
     call: &ProbeInvocation<'_>,
     path: Option<&Path>,
+    events: &mut Vec<ProbeJsonlEvent>,
 ) -> Result<Value, RuntimeError> {
-    let event = ProbeEvent {
+    let redact_args = call
+        .name
+        .rsplit('.')
+        .next()
+        .is_some_and(|short| short == "secret_get");
+    let event = ProbeJsonlEvent {
         ts: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -175,9 +218,16 @@ fn invoke_jsonl_log(
         args: call
             .args
             .iter()
-            .map(|(k, v)| (k.clone(), value_to_json(v)))
+            .map(|(k, v)| {
+                if redact_args {
+                    (k.clone(), serde_json::Value::String("<redacted>".into()))
+                } else {
+                    (k.clone(), value_to_json(v))
+                }
+            })
             .collect(),
     };
+    events.push(event.clone());
     let line = serde_json::to_string(&event).map_err(|err| RuntimeError::ProbeFailed {
         name: call.name.to_string(),
         message: err.to_string(),
@@ -221,6 +271,7 @@ struct CommandResponse {
 fn invoke_command_probe(
     call: &ProbeInvocation<'_>,
     command: &[String],
+    env: &HashMap<String, String>,
 ) -> Result<Value, RuntimeError> {
     if command.is_empty() {
         return Err(RuntimeError::ProbeFailed {
@@ -242,11 +293,16 @@ fn invoke_command_probe(
         message: err.to_string(),
     })?;
 
-    let mut child = Command::new(&command[0])
+    let mut child_cmd = Command::new(&command[0]);
+    child_cmd
         .args(&command[1..])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    if !env.is_empty() {
+        child_cmd.envs(env);
+    }
+    let mut child = child_cmd
         .spawn()
         .map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
@@ -301,65 +357,16 @@ impl From<ProbeBinding> for Handler {
     fn from(binding: ProbeBinding) -> Self {
         match binding {
             ProbeBinding::Jsonl { path } => Handler::Jsonl { path },
-            ProbeBinding::Command { command } => Handler::Command { command },
+            ProbeBinding::Command { command, env } => Handler::Command { command, env },
             ProbeBinding::Mcp { server, tool } => Handler::Mcp { server, tool },
             ProbeBinding::ReadFile => Handler::ReadFile,
             ProbeBinding::WriteFile => Handler::WriteFile,
-            ProbeBinding::HttpGet => Handler::HttpGet,
+            ProbeBinding::HttpGet { headers } => Handler::HttpGet { headers },
             ProbeBinding::JsonParse => Handler::JsonParse,
             ProbeBinding::EnvGet => Handler::EnvGet,
+            ProbeBinding::SecretGet => Handler::SecretGet,
         }
     }
 }
 
-fn value_to_json(value: &Value) -> serde_json::Value {
-    match value {
-        Value::Int(n) => serde_json::Value::from(*n),
-        Value::Float(n) => serde_json::json!(*n),
-        Value::Bool(b) => serde_json::Value::from(*b),
-        Value::Str(s) => serde_json::Value::from(s.clone()),
-        Value::None => serde_json::Value::Null,
-        Value::Some(inner) => serde_json::json!({ "Some": value_to_json(inner) }),
-        Value::List(items) => {
-            serde_json::Value::Array(items.iter().map(value_to_json).collect())
-        }
-        Value::Map(map) => {
-            let obj = map
-                .iter()
-                .map(|(k, v)| (k.clone(), value_to_json(v)))
-                .collect();
-            serde_json::Value::Object(obj)
-        }
-        Value::Struct { name, fields } => serde_json::json!({
-            "struct": name,
-            "fields": fields.iter().map(|(k, v)| (k, value_to_json(v))).collect::<HashMap<_, _>>(),
-        }),
-    }
-}
 
-fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
-    Ok(match value {
-        serde_json::Value::Null => Value::None,
-        serde_json::Value::Bool(b) => Value::Bool(b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Value::Int(i)
-            } else if let Some(f) = n.as_f64() {
-                Value::Float(f)
-            } else {
-                return Err(RuntimeError::Error {
-                    message: "unsupported JSON number in probe response".into(),
-                });
-            }
-        }
-        serde_json::Value::String(s) => Value::Str(s),
-        serde_json::Value::Array(items) => {
-            Value::List(items.into_iter().map(json_to_value).collect::<Result<_, _>>()?)
-        }
-        serde_json::Value::Object(map) => Value::Map(
-            map.into_iter()
-                .map(|(k, v)| json_to_value(v).map(|val| (k, val)))
-                .collect::<Result<_, _>>()?,
-        ),
-    })
-}

@@ -27,7 +27,9 @@ fn has_runtime_handler(name: &str) -> bool {
         | BuiltinCheckerKind::At
         | BuiltinCheckerKind::Get
         | BuiltinCheckerKind::Has
-        | BuiltinCheckerKind::Insert => true,
+        | BuiltinCheckerKind::Insert
+        | BuiltinCheckerKind::Split
+        | BuiltinCheckerKind::Join => true,
     }
 }
 
@@ -50,6 +52,9 @@ fn simple_builtin_handled(name: &str) -> bool {
             | "to_lower"
             | "trim"
             | "replace"
+            | "abs"
+            | "min"
+            | "max"
     )
 }
 
@@ -72,15 +77,18 @@ impl Runtime {
             });
         };
 
-        match def.checker {
-            BuiltinCheckerKind::Simple => self.eval_simple_builtin(name, args),
-            BuiltinCheckerKind::Len => self.eval_len(args, span),
-            BuiltinCheckerKind::Push => self.eval_push(args, span),
-            BuiltinCheckerKind::At => self.eval_at(args, span),
-            BuiltinCheckerKind::Get => self.eval_get(args, span),
-            BuiltinCheckerKind::Has => self.eval_has(args, span),
-            BuiltinCheckerKind::Insert => self.eval_insert(args, span),
-        }
+        let value = match def.checker {
+            BuiltinCheckerKind::Simple => self.eval_simple_builtin(name, args)?,
+            BuiltinCheckerKind::Len => self.eval_len(args, span)?,
+            BuiltinCheckerKind::Push => self.eval_push(args, span)?,
+            BuiltinCheckerKind::At => self.eval_at(args, span)?,
+            BuiltinCheckerKind::Get => self.eval_get(args, span)?,
+            BuiltinCheckerKind::Has => self.eval_has(args, span)?,
+            BuiltinCheckerKind::Insert => self.eval_insert(args, span)?,
+            BuiltinCheckerKind::Split => self.eval_split(args)?,
+            BuiltinCheckerKind::Join => self.eval_join(args)?,
+        };
+        self.finish_value(value)
     }
 
     fn eval_simple_builtin(
@@ -105,6 +113,9 @@ impl Runtime {
             "to_lower" => self.eval_to_lower(args),
             "trim" => self.eval_trim(args),
             "replace" => self.eval_replace(args),
+            "abs" => self.eval_abs(args),
+            "min" => self.eval_min(args),
+            "max" => self.eval_max(args),
             _ => Err(missing_handler_error(name)),
         }
     }
@@ -196,6 +207,76 @@ impl Runtime {
         Ok(Value::Str(s.trim().to_string()))
     }
 
+    /// abs(n): magnitude. `abs(i64::MIN)` overflows, so it is checked (NEB-R007)
+    /// to match the Python backend's i64 bounds check.
+    fn eval_abs(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let n = self.int_arg(args, 0, "abs")?;
+        let span = args
+            .first()
+            .map(|expr| expr.span.clone())
+            .unwrap_or_default();
+        n.checked_abs()
+            .map(Value::Int)
+            .ok_or(RuntimeError::IntegerOverflow {
+                op: "abs".into(),
+                span,
+            })
+    }
+
+    fn eval_min(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let a = self.int_arg(args, 0, "min")?;
+        let b = self.int_arg(args, 1, "min")?;
+        Ok(Value::Int(a.min(b)))
+    }
+
+    fn eval_max(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let a = self.int_arg(args, 0, "max")?;
+        let b = self.int_arg(args, 1, "max")?;
+        Ok(Value::Int(a.max(b)))
+    }
+
+    /// split(s, sep) -> List<Str>. Empty separator is a runtime error so the
+    /// interpreter and Python (which raises on `"".split("")`) stay in lockstep.
+    fn eval_split(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "split")?;
+        let sep = self.str_arg(args, 1, "split")?;
+        if sep.is_empty() {
+            return Err(RuntimeError::Error {
+                message: "split separator must be non-empty".into(),
+            });
+        }
+        Ok(Value::List(
+            s.split(&sep).map(|part| Value::Str(part.to_string())).collect(),
+        ))
+    }
+
+    /// join(parts: List<Str>, sep) -> Str.
+    fn eval_join(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let parts = match self.eval_expr(args.first().ok_or_else(|| RuntimeError::Error {
+            message: "join requires 2 arguments".into(),
+        })?)? {
+            Value::List(items) => items,
+            _ => {
+                return Err(RuntimeError::Error {
+                    message: "join requires a list as first argument".into(),
+                })
+            }
+        };
+        let sep = self.str_arg(args, 1, "join")?;
+        let mut strs = Vec::with_capacity(parts.len());
+        for item in parts {
+            match item {
+                Value::Str(s) => strs.push(s),
+                _ => {
+                    return Err(RuntimeError::Error {
+                        message: "join requires a List<Str>".into(),
+                    })
+                }
+            }
+        }
+        Ok(Value::Str(strs.join(&sep)))
+    }
+
     fn eval_replace(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
         let s = self.str_arg(args, 0, "replace")?;
         let from = self.str_arg(args, 1, "replace")?;
@@ -254,6 +335,7 @@ impl Runtime {
             })?,
         )?;
 
+        let before = self.env_footprint(&list_name);
         match self.env.get_mut(&list_name) {
             Some(Value::List(items)) => {
                 if let Some(existing) = items.first() {
@@ -264,6 +346,7 @@ impl Runtime {
                     }
                 }
                 items.push(value);
+                self.record_env_footprint_change(&list_name, before)?;
                 Ok(Value::None)
             }
             Some(_) => Err(RuntimeError::Error {
@@ -364,9 +447,11 @@ impl Runtime {
         };
         let key = super::value_to_string(&self.eval_expr(&args[1])?)?;
         let value = self.eval_expr(&args[2])?;
+        let before = self.env_footprint(&map_name);
         match self.env.get_mut(&map_name) {
             Some(Value::Map(entries)) => {
                 entries.insert(key, value);
+                self.record_env_footprint_change(&map_name, before)?;
                 Ok(Value::None)
             }
             Some(_) => Err(RuntimeError::Error {

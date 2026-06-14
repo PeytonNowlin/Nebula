@@ -50,7 +50,7 @@ mission main {
     let ir = lower(&typed).expect("lower");
 
     let mut runtime = Runtime::new(&ir)
-        .with_probe_manifest(&manifest_path)
+        .with_probe_manifest(&manifest_path, None)
         .expect("load probe manifest");
     runtime.run(&ir).expect("run");
 
@@ -106,7 +106,7 @@ mission main {
     let ir = lower(&typed).expect("lower");
 
     let mut runtime = Runtime::new(&ir)
-        .with_probe_manifest(&manifest_path)
+        .with_probe_manifest(&manifest_path, None)
         .expect("load probe manifest")
         .with_capture_print(true);
     runtime.run(&ir).expect("probe call expression should run");
@@ -144,7 +144,7 @@ mission main {
     let ir = lower(&typed).expect("lower");
 
     let mut runtime = Runtime::new(&ir)
-        .with_probe_manifest(&manifest_path)
+        .with_probe_manifest(&manifest_path, None)
         .expect("load probe manifest");
     runtime.run(&ir).expect("command probe should succeed");
 }
@@ -152,7 +152,7 @@ mission main {
 fn load_bundle_host() -> RegistryProbeHost {
     let manifest = workspace_root().join("probes/bundle.json");
     let mut host = RegistryProbeHost::with_defaults();
-    host.load_manifest(&manifest).expect("load bundle manifest");
+    host.load_manifest(&manifest, None).expect("load bundle manifest");
     host
 }
 
@@ -309,7 +309,7 @@ mission main {{
     let typed = typecheck(&program).expect("typecheck");
     let ir = lower(&typed).expect("lower");
     let mut runtime = Runtime::new(&ir)
-        .with_probe_manifest(&manifest)
+        .with_probe_manifest(&manifest, None)
         .expect("load manifest")
         .with_capture_print(true);
     runtime.run(&ir).expect("run io bundle example");

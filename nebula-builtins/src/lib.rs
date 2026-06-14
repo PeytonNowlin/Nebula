@@ -14,6 +14,8 @@ pub enum BuiltinCheckerKind {
     Get,
     Has,
     Insert,
+    Split,
+    Join,
 }
 
 #[derive(Debug, Clone)]
@@ -94,12 +96,16 @@ fn parse_manifest(source: &str) -> Result<BuiltinManifest, String> {
 
         let return_type = match entry.returns.as_deref() {
             Some(text) => parse_type(text).map_err(|err| format!("{}: {err}", entry.name))?,
-            None if matches!(checker, BuiltinCheckerKind::At | BuiltinCheckerKind::Get) => {
+            None if matches!(
+                checker,
+                BuiltinCheckerKind::At | BuiltinCheckerKind::Get | BuiltinCheckerKind::Split
+            ) =>
+            {
                 Type::Void
             }
             None => {
                 return Err(format!(
-                    "{}: `returns` is required unless checker is `at` or `get`",
+                    "{}: `returns` is required unless checker is `at`, `get`, or `split`",
                     entry.name
                 ));
             }
@@ -143,6 +149,8 @@ fn parse_checker(
         Some("get") => Ok(BuiltinCheckerKind::Get),
         Some("has") => Ok(BuiltinCheckerKind::Has),
         Some("insert") => Ok(BuiltinCheckerKind::Insert),
+        Some("split") => Ok(BuiltinCheckerKind::Split),
+        Some("join") => Ok(BuiltinCheckerKind::Join),
         Some(other) => Err(format!("unknown builtin checker `{other}`")),
     }
 }
@@ -187,11 +195,12 @@ mod tests {
     #[test]
     fn manifest_lists_all_runtime_builtins() {
         let names: Vec<_> = manifest().names().collect();
-        assert_eq!(names.len(), 22);
+        assert_eq!(names.len(), 27);
         for name in [
             "print", "len", "push", "at", "get", "has", "insert", "str_to_int", "int_to_str",
             "str_to_float", "float_to_str", "int_to_float", "float_to_int", "substr", "contains",
             "index_of", "starts_with", "ends_with", "to_upper", "to_lower", "trim", "replace",
+            "split", "join", "abs", "min", "max",
         ] {
             assert!(manifest().is_builtin(name), "missing builtin {name}");
         }

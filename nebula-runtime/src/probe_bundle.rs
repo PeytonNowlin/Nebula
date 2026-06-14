@@ -26,9 +26,16 @@ pub(crate) fn invoke_write_file(
 pub(crate) fn invoke_http_get(
     name: &str,
     args: &HashMap<String, Value>,
+    headers: Option<&HashMap<String, String>>,
 ) -> Result<Value, RuntimeError> {
     let url = required_str_arg(name, args, "url")?;
-    let response = ureq::get(&url).call().map_err(|err| probe_failed(name, err.to_string()))?;
+    let mut request = ureq::get(&url);
+    if let Some(headers) = headers {
+        for (key, value) in headers {
+            request = request.header(key, value);
+        }
+    }
+    let response = request.call().map_err(|err| probe_failed(name, err.to_string()))?;
     let body = response
         .into_body()
         .read_to_string()
@@ -68,6 +75,18 @@ pub(crate) fn invoke_env_get(
             name,
             format!("environment variable `{key}` is not valid UTF-8"),
         )),
+    }
+}
+
+pub(crate) fn invoke_secret_get(
+    name: &str,
+    args: &HashMap<String, Value>,
+    secrets: &HashMap<String, String>,
+) -> Result<Value, RuntimeError> {
+    let key = required_str_arg(name, args, "name")?;
+    match secrets.get(&key) {
+        Some(value) => Ok(Value::Some(Box::new(Value::Str(value.clone())))),
+        None => Ok(Value::None),
     }
 }
 

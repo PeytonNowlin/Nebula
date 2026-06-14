@@ -189,6 +189,47 @@ mission main {
 }
 
 #[test]
+fn parity_numeric_helpers() {
+    assert_parity(
+        "numeric_helpers",
+        r#"
+mission main {
+  print(int_to_str(abs(0 minus 42)));
+  print(int_to_str(abs(7)));
+  print(int_to_str(min(3, 9)));
+  print(int_to_str(max(3, 9)));
+  print(int_to_str(min(0 minus 5, 0 minus 2)));
+  print(int_to_str(max(0 minus 5, 0 minus 2)));
+}
+"#,
+    );
+}
+
+#[test]
+fn parity_split_and_join() {
+    assert_parity(
+        "split_join",
+        r#"
+mission main {
+  let parts: List<Str> = split("alice,bob,carol", ",");
+  print(int_to_str(len(parts)));
+  print(at(parts, 1));
+  print(join(parts, " | "));
+  let pairs: List<Str> = split("a=1;b=2;c=3", ";");
+  let mut keys: List<Str> = [];
+  let mut i: Int = 0;
+  while i lt len(pairs) do
+    let kv: List<Str> = split(at(pairs, i), "=");
+    push(keys, to_upper(at(kv, 0)));
+    set i = i plus 1;
+  end
+  print(join(keys, ","));
+}
+"#,
+    );
+}
+
+#[test]
 fn parity_string_operations() {
     assert_parity(
         "string_ops",

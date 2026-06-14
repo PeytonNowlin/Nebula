@@ -15,11 +15,50 @@
     "detail": {
       "type": "string",
       "description": "Binding name for `let`/`set`, or resolved probe name for `call`."
+    },
+    "value": {
+      "$ref": "nebula-value.schema.json",
+      "description": "Serialized binding value after `let` or `set`."
+    },
+    "args": {
+      "type": "object",
+      "additionalProperties": { "$ref": "nebula-value.schema.json" },
+      "description": "Probe call arguments for `probe` steps."
+    },
+    "result": {
+      "$ref": "#/$defs/probeResult",
+      "description": "Probe return summary for `probe` steps."
+    }
+  },
+  "$defs": {
+    "probeResult": {
+      "oneOf": [
+        { "$ref": "nebula-value.schema.json" },
+        {
+          "type": "object",
+          "required": ["_summary"],
+          "additionalProperties": true,
+          "properties": {
+            "_summary": { "type": "string" },
+            "len": { "type": "integer" },
+            "preview": { "type": "string" },
+            "name": { "type": "string" },
+            "fields": { "type": "integer" },
+            "inner": {},
+            "redacted": { "type": "boolean" }
+          }
+        }
+      ]
     }
   },
   "examples": [
-    { "step": "let", "detail": "count" },
-    { "step": "set", "detail": "count" },
-    { "step": "probe", "detail": "log" }
+    { "step": "let", "detail": "attempts", "value": 0 },
+    { "step": "set", "detail": "attempts", "value": 1 },
+    {
+      "step": "probe",
+      "detail": "log",
+      "args": { "level": "info", "message": "1" },
+      "result": null
+    }
   ]
 }

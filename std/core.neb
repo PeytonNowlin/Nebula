@@ -23,6 +23,11 @@
 --   to_lower(s: Str) -> Str
 --   trim(s: Str) -> Str
 --   replace(s: Str, from: Str, to: Str) -> Str   -- replaces all occurrences
+--   split(s: Str, sep: Str) -> List<Str>      -- empty sep is a runtime error
+--   join(parts: List<Str>, sep: Str) -> Str
+--   abs(n: Int) -> Int                        -- overflows on i64::MIN (NEB-R007)
+--   min(a: Int, b: Int) -> Int
+--   max(a: Int, b: Int) -> Int
 --
 -- String indices/lengths are in Unicode code points; both backends agree.
 -- Numeric ops require matching operand types (both Int or both Float); there is

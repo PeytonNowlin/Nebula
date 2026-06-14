@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "diagnostic.schema.json",
   "title": "NebulaDiagnostic",
-  "description": "One agent-oriented diagnostic record. `nebula check --json` and `nebula run --json` emit a JSON array of these on stderr when compilation or execution fails (an empty array `[]` on success for `check`). The same shape is returned as `DiagnosticJson` by the `nebula-host` embedding crate.",
+  "description": "One agent-oriented diagnostic record. `nebula check --json` emits a JSON array of these on stderr when compilation fails (an empty array `[]` on success). `nebula run --json` embeds diagnostics in the run record's `diagnostics` field. The same shape is returned as `DiagnosticJson` by the `nebula-host` embedding crate.",
   "type": "object",
   "additionalProperties": false,
   "required": ["code", "message"],
@@ -11,7 +11,7 @@
       "type": "string",
       "pattern": "^NEB-[A-Z][0-9]{3}$",
       "description": "Stable structured error code. The letter identifies the category: S=syntax/parse, T=type, R=runtime, P=probe, L=module load/import.",
-      "examples": ["NEB-S002", "NEB-T002", "NEB-R004", "NEB-P004", "NEB-L003"]
+      "examples": ["NEB-S002", "NEB-T002", "NEB-R004", "NEB-R008", "NEB-R009", "NEB-R010", "NEB-P004", "NEB-L003"]
     },
     "message": {
       "type": "string",

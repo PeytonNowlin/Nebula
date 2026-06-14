@@ -24,6 +24,11 @@ __all__ = [
     "nebula_to_lower",
     "nebula_trim",
     "nebula_replace",
+    "nebula_split",
+    "nebula_join",
+    "nebula_abs",
+    "nebula_min",
+    "nebula_max",
     "nebula_add",
     "nebula_sub",
     "nebula_mul",
@@ -199,6 +204,41 @@ def nebula_replace(s: str, from_: str, to: str) -> str:
     return _require_str(s, "replace").replace(
         _require_str(from_, "replace"), _require_str(to, "replace")
     )
+
+
+def nebula_split(s: str, sep: str) -> list:
+    s = _require_str(s, "split")
+    sep = _require_str(sep, "split")
+    if sep == "":
+        # Match the interpreter; Python's str.split("") also raises.
+        raise NebulaRuntimeError("split separator must be non-empty")
+    return s.split(sep)
+
+
+def nebula_join(parts: list, sep: str) -> str:
+    if not isinstance(parts, list):
+        raise NebulaRuntimeError("join expects a List as first argument")
+    sep = _require_str(sep, "join")
+    return sep.join(_require_str(p, "join") for p in parts)
+
+
+def _require_int(value, fname: str) -> int:
+    if not _is_int(value):
+        raise NebulaRuntimeError(f"{fname} expects Int arguments")
+    return value
+
+
+def nebula_abs(n: int) -> int:
+    # abs(-2**63) overflows i64; trap it (NEB-R007) to match the interpreter.
+    return _check_i64(abs(_require_int(n, "abs")), "abs")
+
+
+def nebula_min(a: int, b: int) -> int:
+    return min(_require_int(a, "min"), _require_int(b, "min"))
+
+
+def nebula_max(a: int, b: int) -> int:
+    return max(_require_int(a, "max"), _require_int(b, "max"))
 
 
 def _is_int(value) -> bool:

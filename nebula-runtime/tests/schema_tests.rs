@@ -129,6 +129,10 @@ fn diagnostic_schema_matches_json_output_shapes() {
         "code": "NEB-R004",
         "message": "division by zero"
     });
+    let resource_limit = serde_json::json!({
+        "code": "NEB-R008",
+        "message": "execution exceeded time limit of 30000ms"
+    });
     // Span tied to no named file serializes `file` as null.
     let null_file = serde_json::json!({
         "code": "NEB-L002",
@@ -136,7 +140,7 @@ fn diagnostic_schema_matches_json_output_shapes() {
         "message": "circular import"
     });
 
-    for sample in [&with_span, &without_span, &null_file] {
+    for sample in [&with_span, &without_span, &resource_limit, &null_file] {
         validator
             .validate(sample)
             .unwrap_or_else(|_| panic!("diagnostic should validate: {sample}"));
@@ -171,6 +175,58 @@ fn probe_manifest_schema_validates_bundle() {
     validator
         .validate(&manifest)
         .expect("bundle manifest should validate");
+}
+
+#[test]
+fn run_record_schema_accepts_success_shape() {
+    let validator = load_schema("run-record.schema.json");
+    let record = serde_json::json!({
+        "program": "examples/hello.neb",
+        "exit": 0,
+        "diagnostics": [],
+        "telemetry_path": "trace.jsonl",
+        "probe_events": [
+            {
+                "ts": 1718380800,
+                "probe": "log",
+                "args": { "level": "info", "message": "ready" }
+            }
+        ],
+        "duration_ms": 12,
+        "printed": ["Hello from Nebula"],
+        "return_value": null,
+        "probes_called": [
+            {
+                "name": "log",
+                "args": { "level": "info", "message": "ready" },
+                "result": null
+            }
+        ]
+    });
+    validator
+        .validate(&record)
+        .expect("run record should validate");
+}
+
+#[test]
+fn probe_manifest_schema_accepts_secrets_section() {
+    let validator = load_schema("probe-manifest.schema.json");
+    let manifest = serde_json::json!({
+        "secrets": {
+            "api_token": { "env": "OPENAI_API_KEY" },
+            "dev_token": { "value": "sk-test" }
+        },
+        "probes": {
+            "secret_get": { "kind": "secret_get" },
+            "fetch": {
+                "kind": "http_get",
+                "headers": { "Authorization": "Bearer ${secret:api_token}" }
+            }
+        }
+    });
+    validator
+        .validate(&manifest)
+        .expect("secrets manifest should validate");
 }
 
 #[test]

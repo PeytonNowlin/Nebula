@@ -95,6 +95,9 @@ fn sig_for(kind: BuiltinCheckerKind) -> &'static BuiltinSig {
         BuiltinCheckerKind::Simple => {
             panic!("simple builtins are checked via manifest signatures")
         }
+        BuiltinCheckerKind::Split | BuiltinCheckerKind::Join => {
+            panic!("split/join are checked directly, not via signatures")
+        }
     }
 }
 
@@ -124,10 +127,68 @@ impl Checker {
         errors: &mut Vec<TypeError>,
     ) -> Option<Type> {
         let builtin = manifest().get(name)?;
-        if builtin.checker == BuiltinCheckerKind::Simple {
-            return None;
+        match builtin.checker {
+            BuiltinCheckerKind::Simple => None,
+            BuiltinCheckerKind::Split => Some(self.check_split(args, scope, errors)),
+            BuiltinCheckerKind::Join => Some(self.check_join(args, scope, errors)),
+            other => Some(self.check_special_builtin(sig_for(other), args, scope, errors)),
         }
-        Some(self.check_special_builtin(sig_for(builtin.checker), args, scope, errors))
+    }
+
+    /// `split(s: Str, sep: Str) -> List<Str>`.
+    fn check_split(
+        &self,
+        args: &[Spanned<Expr>],
+        scope: &mut Scope,
+        errors: &mut Vec<TypeError>,
+    ) -> Type {
+        let str_list = Type::List(Box::new(Type::Str));
+        if !report_arity(2, args, errors) {
+            return str_list;
+        }
+        self.expect_str(&args[0], scope, errors);
+        self.expect_str(&args[1], scope, errors);
+        str_list
+    }
+
+    /// `join(parts: List<Str>, sep: Str) -> Str`.
+    fn check_join(
+        &self,
+        args: &[Spanned<Expr>],
+        scope: &mut Scope,
+        errors: &mut Vec<TypeError>,
+    ) -> Type {
+        if !report_arity(2, args, errors) {
+            return Type::Str;
+        }
+        let str_list = Type::List(Box::new(Type::Str));
+        let parts_ty = self.check_expr_inner(&args[0].node, scope, errors, Some(&str_list));
+        if !types_equal(&parts_ty, &str_list) {
+            errors.push(TypeError::Mismatch {
+                expected: "List<Str>".into(),
+                found: parts_ty.display(),
+                span: args[0].span.clone(),
+            });
+        }
+        self.expect_str(&args[1], scope, errors);
+        Type::Str
+    }
+
+    /// Check that `arg` is a `Str`.
+    fn expect_str(
+        &self,
+        arg: &Spanned<Expr>,
+        scope: &mut Scope,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let ty = self.check_expr_inner(&arg.node, scope, errors, Some(&Type::Str));
+        if ty != Type::Str {
+            errors.push(TypeError::Mismatch {
+                expected: "Str".into(),
+                found: ty.display(),
+                span: arg.span.clone(),
+            });
+        }
     }
 
     fn check_special_builtin(

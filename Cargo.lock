@@ -969,6 +969,7 @@ dependencies = [
  "miette",
  "nebula-diagnostics",
  "nebula-host",
+ "nebula-runtime",
  "nebula-test-support",
  "serde",
  "serde_json",
@@ -1008,6 +1009,8 @@ dependencies = [
  "nebula-syntax",
  "nebula-test-support",
  "nebula-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Report};
 use nebula_diagnostics::{diagnostics_from_report_with_source, emit_json_diagnostics};
 use nebula_host::{AstProgram, DeclaredProbe, Host, HostConfig, IrProgram};
+use nebula_runtime::ResourceLimits;
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -54,6 +56,18 @@ enum Commands {
         /// JSON manifest mapping declared probes to host handlers
         #[arg(long)]
         probes: Option<PathBuf>,
+        /// Disable interpreter resource limits (timeout, loop iterations, memory)
+        #[arg(long)]
+        no_resource_limits: bool,
+        /// Wall-clock execution limit in milliseconds (default: 30000)
+        #[arg(long)]
+        max_runtime_ms: Option<u64>,
+        /// Global while-loop iteration budget (default: 1000000)
+        #[arg(long)]
+        max_loop_iterations: Option<u64>,
+        /// Approximate memory budget in megabytes (default: 64)
+        #[arg(long)]
+        max_memory_mb: Option<u64>,
         /// Emit structured JSON diagnostics on failure
         #[arg(long)]
         json: bool,
@@ -183,15 +197,34 @@ fn main() -> ExitCode {
             file,
             telemetry,
             probes,
+            no_resource_limits,
+            max_runtime_ms,
+            max_loop_iterations,
+            max_memory_mb,
             json,
         } => {
-            let host = host_with_config(probes, telemetry);
+            let host = run_host(
+                probes,
+                telemetry,
+                build_resource_limits(
+                    no_resource_limits,
+                    max_runtime_ms,
+                    max_loop_iterations,
+                    max_memory_mb,
+                ),
+            );
             if json {
                 let result = host.run_file(&file);
+                match serde_json::to_string(&result.record) {
+                    Ok(payload) => println!("{payload}"),
+                    Err(err) => {
+                        eprintln!("failed to serialize run record: {err}");
+                        return ExitCode::FAILURE;
+                    }
+                }
                 if result.ok {
                     ExitCode::SUCCESS
                 } else {
-                    emit_json_diagnostics(&result.diagnostics);
                     ExitCode::FAILURE
                 }
             } else {
@@ -240,12 +273,50 @@ fn host_with_config(
     if probe_manifest.is_some() || telemetry_path.is_some() {
         Host::with_config(HostConfig {
             probe_manifest,
+            secrets: Default::default(),
             telemetry_path,
-            ..HostConfig::default()
+            source_entry_label: None,
+            resource_limits: ResourceLimits::agent_defaults(),
         })
     } else {
         Host::new()
     }
+}
+
+fn run_host(
+    probe_manifest: Option<PathBuf>,
+    telemetry_path: Option<PathBuf>,
+    resource_limits: ResourceLimits,
+) -> Host {
+    Host::with_config(HostConfig {
+        probe_manifest,
+        secrets: Default::default(),
+        telemetry_path,
+        source_entry_label: None,
+        resource_limits,
+    })
+}
+
+fn build_resource_limits(
+    no_resource_limits: bool,
+    max_runtime_ms: Option<u64>,
+    max_loop_iterations: Option<u64>,
+    max_memory_mb: Option<u64>,
+) -> ResourceLimits {
+    if no_resource_limits {
+        return ResourceLimits::unlimited();
+    }
+    let mut limits = ResourceLimits::agent_defaults();
+    if let Some(ms) = max_runtime_ms {
+        limits.max_runtime = Some(Duration::from_millis(ms));
+    }
+    if let Some(iterations) = max_loop_iterations {
+        limits.max_loop_iterations = Some(iterations);
+    }
+    if let Some(mb) = max_memory_mb {
+        limits.max_memory_bytes = Some(mb as usize * 1024 * 1024);
+    }
+    limits
 }
 
 fn emit_json_export<T: Serialize>(json: bool, value: &T) -> ExitCode {
@@ -299,7 +370,7 @@ fn list_probes(
                     println!("  {name:<16} jsonl");
                 }
             }
-            DeclaredProbe::Command { name, command } => {
+            DeclaredProbe::Command { name, command, .. } => {
                 println!("  {name:<16} command  {}", command.join(" "));
             }
             DeclaredProbe::Mcp { name, server, tool } => {
@@ -311,9 +382,10 @@ fn list_probes(
             }
             DeclaredProbe::ReadFile { name } => println!("  {name:<16} read_file"),
             DeclaredProbe::WriteFile { name } => println!("  {name:<16} write_file"),
-            DeclaredProbe::HttpGet { name } => println!("  {name:<16} http_get"),
+            DeclaredProbe::HttpGet { name, .. } => println!("  {name:<16} http_get"),
             DeclaredProbe::JsonParse { name } => println!("  {name:<16} json_parse"),
             DeclaredProbe::EnvGet { name } => println!("  {name:<16} env_get"),
+            DeclaredProbe::SecretGet { name } => println!("  {name:<16} secret_get"),
         }
     }
 

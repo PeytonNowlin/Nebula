@@ -5,6 +5,7 @@
     "write_file": { "kind": "write_file" },
     "http_get": { "kind": "http_get" },
     "json_parse": { "kind": "json_parse" },
-    "env_get": { "kind": "env_get" }
+    "env_get": { "kind": "env_get" },
+    "secret_get": { "kind": "secret_get" }
   }
 }

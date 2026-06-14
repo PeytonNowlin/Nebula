@@ -1,28 +1,35 @@
 mod builtins;
 mod diagnostic_extract;
+mod limits;
 mod probe;
 mod probe_bundle;
 mod probe_manifest;
+mod secrets;
+mod telemetry_format;
+pub mod value_json;
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::time::Instant;
 
 use miette::Diagnostic;
 use nebula_ast::{BinaryOp, UnaryOp};
 use nebula_builtins::is_builtin;
 use nebula_ast::Span;
 use nebula_ir::{IrExpr, IrExprKind, IrProgram, IrStmt};
-use serde::Serialize;
 use thiserror::Error;
 
 pub use builtins::missing_runtime_handlers;
-pub use probe::{ProbeHost, ProbeInvocation, RegistryProbeHost};
+pub use limits::ResourceLimits;
+pub use telemetry_format::ProbeCallRecord;
+pub use probe::{ProbeHost, ProbeInvocation, ProbeJsonlEvent, RegistryProbeHost};
 pub use probe_manifest::{
-    list_probe_manifest, read_probe_manifest, validate_manifest, DeclaredProbe, McpServerReport,
-    ProbeBinding, ProbeListReport, ProbeManifest,
+    list_probe_manifest, prepare_probe_manifest, read_probe_manifest, validate_manifest,
+    DeclaredProbe, McpServerReport, ProbeBinding, ProbeListReport, ProbeManifest,
 };
+pub use secrets::{resolve_secrets, SecretBinding, SecretsStore};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -85,6 +92,21 @@ pub enum RuntimeError {
     #[error("NEB-R007 [runtime_error] integer overflow in `{op}`")]
     #[diagnostic(code(nebula::integer_overflow))]
     IntegerOverflow { op: String, span: Span },
+
+    #[error("NEB-R008 [runtime_error] execution exceeded time limit of {limit_ms}ms")]
+    #[diagnostic(code(nebula::execution_timeout))]
+    ExecutionTimeout { limit_ms: u64 },
+
+    #[error("NEB-R009 [runtime_error] while-loop iteration limit of {limit} exceeded")]
+    #[diagnostic(code(nebula::loop_iteration_limit))]
+    LoopIterationLimit { limit: u64, span: Span },
+
+    #[error("NEB-R010 [runtime_error] memory limit of {limit_bytes} bytes exceeded (used {used_bytes} bytes)")]
+    #[diagnostic(code(nebula::memory_limit_exceeded))]
+    MemoryLimitExceeded {
+        limit_bytes: usize,
+        used_bytes: usize,
+    },
 }
 
 impl nebula_ast::NebError for RuntimeError {
@@ -100,6 +122,9 @@ impl nebula_ast::NebError for RuntimeError {
             RuntimeError::IndexOutOfBounds { .. } => "NEB-R005",
             RuntimeError::KeyNotFound { .. } => "NEB-R006",
             RuntimeError::IntegerOverflow { .. } => "NEB-R007",
+            RuntimeError::ExecutionTimeout { .. } => "NEB-R008",
+            RuntimeError::LoopIterationLimit { .. } => "NEB-R009",
+            RuntimeError::MemoryLimitExceeded { .. } => "NEB-R010",
         }
     }
 
@@ -127,6 +152,18 @@ impl nebula_ast::NebError for RuntimeError {
             RuntimeError::IntegerOverflow { op, .. } => {
                 format!("integer overflow in `{op}`")
             }
+            RuntimeError::ExecutionTimeout { limit_ms, .. } => {
+                format!("execution exceeded time limit of {limit_ms}ms")
+            }
+            RuntimeError::LoopIterationLimit { limit, .. } => {
+                format!("while-loop iteration limit of {limit} exceeded")
+            }
+            RuntimeError::MemoryLimitExceeded {
+                limit_bytes,
+                used_bytes,
+            } => format!(
+                "memory limit of {limit_bytes} bytes exceeded (used {used_bytes} bytes)"
+            ),
         }
     }
 
@@ -136,17 +173,14 @@ impl nebula_ast::NebError for RuntimeError {
             | RuntimeError::DivideByZero { span }
             | RuntimeError::IndexOutOfBounds { span, .. }
             | RuntimeError::KeyNotFound { span, .. }
-            | RuntimeError::IntegerOverflow { span, .. } => Some(span.clone()),
+            | RuntimeError::IntegerOverflow { span, .. }
+            | RuntimeError::LoopIterationLimit { span, .. } => Some(span.clone()),
             _ => None,
         }
     }
 }
 
-#[derive(Serialize)]
-struct TelemetryEvent {
-    step: String,
-    detail: String,
-}
+use telemetry_format::TelemetryEvent;
 
 pub struct Runtime {
     env: HashMap<String, Value>,
@@ -158,6 +192,11 @@ pub struct Runtime {
     telemetry_enabled: bool,
     capture_print: bool,
     printed: Vec<String>,
+    probes_called: Vec<telemetry_format::ProbeCallRecord>,
+    pub(crate) limits: limits::ResourceLimits,
+    pub(crate) started_at: Option<Instant>,
+    pub(crate) loop_iterations: u64,
+    pub(crate) memory_bytes: usize,
 }
 
 impl Runtime {
@@ -180,6 +219,11 @@ impl Runtime {
             telemetry_enabled: false,
             capture_print: false,
             printed: Vec::new(),
+            probes_called: Vec::new(),
+            limits: limits::ResourceLimits::unlimited(),
+            started_at: None,
+            loop_iterations: 0,
+            memory_bytes: 0,
         }
     }
 
@@ -194,13 +238,27 @@ impl Runtime {
         std::mem::take(&mut self.printed)
     }
 
+    /// Drain jsonl probe events captured during execution.
+    pub fn take_probe_events(&mut self) -> Vec<ProbeJsonlEvent> {
+        self.probe_host.take_probe_events()
+    }
+
+    /// Drain all probe invocations captured during execution.
+    pub fn take_probes_called(&mut self) -> Vec<telemetry_format::ProbeCallRecord> {
+        std::mem::take(&mut self.probes_called)
+    }
+
     pub fn with_probe_host(mut self, host: RegistryProbeHost) -> Self {
         self.probe_host = host;
         self
     }
 
-    pub fn with_probe_manifest(mut self, path: &Path) -> Result<Self, RuntimeError> {
-        self.probe_host.load_manifest(path)?;
+    pub fn with_probe_manifest(
+        mut self,
+        path: &Path,
+        secrets_overlay: Option<&SecretsStore>,
+    ) -> Result<Self, RuntimeError> {
+        self.probe_host.load_manifest(path, secrets_overlay)?;
         Ok(self)
     }
 
@@ -216,6 +274,7 @@ impl Runtime {
     }
 
     pub fn run(&mut self, program: &IrProgram) -> Result<Value, RuntimeError> {
+        self.begin_run_budget();
         let mut result = Value::None;
         for stmt in &program.mission.stmts {
             if let Some(v) = self.exec_stmt(stmt)? {
@@ -226,11 +285,14 @@ impl Runtime {
     }
 
     fn exec_stmt(&mut self, stmt: &IrStmt) -> Result<Option<Value>, RuntimeError> {
+        self.check_timeout()?;
         match stmt {
             IrStmt::Let { name, value, .. } => {
                 let v = self.eval_expr(value)?;
-                self.env.insert(name.clone(), v);
-                self.log_telemetry("let", name);
+                self.charge_env_binding(name, v)?;
+                if let Some(bound) = self.env.get(name) {
+                    self.log_telemetry_binding("let", name, bound);
+                }
                 Ok(None)
             }
             IrStmt::Set { name, value } => {
@@ -241,8 +303,10 @@ impl Runtime {
                     });
                 }
                 let v = self.eval_expr(value)?;
-                self.env.insert(name.clone(), v);
-                self.log_telemetry("set", name);
+                self.charge_env_binding(name, v)?;
+                if let Some(bound) = self.env.get(name) {
+                    self.log_telemetry_binding("set", name, bound);
+                }
                 Ok(None)
             }
             IrStmt::If {
@@ -264,7 +328,10 @@ impl Runtime {
                 Ok(None)
             }
             IrStmt::While { condition, body } => {
-                while is_truthy(&self.eval_expr(condition)?) {
+                while {
+                    self.bump_loop_iteration(condition.span.clone())?;
+                    is_truthy(&self.eval_expr(condition)?)
+                } {
                     for s in body {
                         if let Some(v) = self.exec_stmt(s)? {
                             return Ok(Some(v));
@@ -298,13 +365,17 @@ impl Runtime {
     }
 
     fn eval_expr(&mut self, expr: &IrExpr) -> Result<Value, RuntimeError> {
+        self.check_timeout()?;
         match &expr.node {
             IrExprKind::Int(n) => Ok(Value::Int(*n)),
             IrExprKind::Float(n) => Ok(Value::Float(*n)),
-            IrExprKind::Str(s) => Ok(Value::Str(s.clone())),
+            IrExprKind::Str(s) => self.finish_value(Value::Str(s.clone())),
             IrExprKind::Bool(b) => Ok(Value::Bool(*b)),
             IrExprKind::None => Ok(Value::None),
-            IrExprKind::Some(inner) => Ok(Value::Some(Box::new(self.eval_expr(inner)?))),
+            IrExprKind::Some(inner) => {
+                let inner = self.eval_expr(inner)?;
+                self.finish_value(Value::Some(Box::new(inner)))
+            }
             IrExprKind::Var(name) => self.env.get(name).cloned().ok_or(RuntimeError::UndefinedVar {
                 name: name.clone(),
                 span: expr.span.clone(),
@@ -318,7 +389,7 @@ impl Runtime {
             IrExprKind::Binary { left, op, right } => {
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
-                eval_binary(*op, l, r, expr.span.clone())
+                self.finish_value(eval_binary(*op, l, r, expr.span.clone())?)
             }
             IrExprKind::Call { name, args } => {
                 if is_builtin(name) {
@@ -345,10 +416,10 @@ impl Runtime {
                     arg_values.push(self.eval_expr(arg)?);
                 }
 
-                let saved_env = std::mem::take(&mut self.env);
+                let (saved_env, saved_memory) = self.take_env_budget();
                 let saved_sector = self.current_sector.replace(func.sector.clone());
                 for (param, value) in func.params.iter().zip(arg_values) {
-                    self.env.insert(param.clone(), value);
+                    self.charge_env_binding(param, value)?;
                 }
 
                 let mut result = Value::None;
@@ -359,16 +430,16 @@ impl Runtime {
                     }
                 }
 
-                self.env = saved_env;
+                self.restore_env_budget(saved_env, saved_memory);
                 self.current_sector = saved_sector;
-                Ok(result)
+                self.finish_value(result)
             }
             IrExprKind::List(items) => {
                 let mut vals = Vec::new();
                 for item in items {
                     vals.push(self.eval_expr(item)?);
                 }
-                Ok(Value::List(vals))
+                self.finish_value(Value::List(vals))
             }
             IrExprKind::Map(entries) => {
                 let mut map = HashMap::new();
@@ -376,14 +447,14 @@ impl Runtime {
                     let key = value_to_string(&self.eval_expr(k)?)?;
                     map.insert(key, self.eval_expr(v)?);
                 }
-                Ok(Value::Map(map))
+                self.finish_value(Value::Map(map))
             }
             IrExprKind::Struct { name, fields } => {
                 let mut map = HashMap::new();
                 for (k, v) in fields {
                     map.insert(k.clone(), self.eval_expr(v)?);
                 }
-                Ok(Value::Struct {
+                self.finish_value(Value::Struct {
                     name: name.clone(),
                     fields: map,
                 })
@@ -402,7 +473,10 @@ impl Runtime {
                     }),
                 }
             }
-            IrExprKind::ProbeCall { name, args } => self.invoke_probe(name, args),
+            IrExprKind::ProbeCall { name, args } => {
+                let value = self.invoke_probe(name, args)?;
+                self.finish_value(value)
+            }
         }
     }
 
@@ -421,11 +495,20 @@ impl Runtime {
         for (k, v) in args {
             evaluated.insert(k.clone(), self.eval_expr(v)?);
         }
-        self.log_telemetry("probe", &resolved);
-        self.probe_host.invoke(&ProbeInvocation {
+        self.check_timeout()?;
+        let value = self.probe_host.invoke(&ProbeInvocation {
             name: &resolved,
-            args: evaluated,
-        })
+            args: evaluated.clone(),
+        })?;
+        self.probes_called
+            .push(telemetry_format::probe_call_record(
+                &resolved,
+                &evaluated,
+                &value,
+            ));
+        self.log_telemetry_probe(&resolved, &evaluated, &value);
+        self.check_timeout()?;
+        Ok(value)
     }
 
     fn resolve_function(&self, name: &str) -> String {
@@ -458,21 +541,39 @@ impl Runtime {
         name.to_string()
     }
 
-    fn log_telemetry(&self, step: &str, detail: &str) {
+    fn log_telemetry_event(&self, event: TelemetryEvent) {
         if !self.telemetry_enabled {
             return;
         }
         if let Some(path) = &self.telemetry_path {
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-                let event = TelemetryEvent {
-                    step: step.into(),
-                    detail: detail.into(),
-                };
                 if let Ok(line) = serde_json::to_string(&event) {
                     let _ = writeln!(file, "{line}");
                 }
             }
         }
+    }
+
+    fn log_telemetry_binding(&self, step: &str, name: &str, value: &Value) {
+        self.log_telemetry_event(TelemetryEvent {
+            step: step.into(),
+            detail: name.into(),
+            value: Some(telemetry_format::binding_value(value)),
+            args: None,
+            result: None,
+        });
+    }
+
+    fn log_telemetry_probe(&self, name: &str, args: &HashMap<String, Value>, result: &Value) {
+        let short = name.rsplit('.').next().unwrap_or(name);
+        let redact_args = short == "secret_get";
+        self.log_telemetry_event(TelemetryEvent {
+            step: "probe".into(),
+            detail: name.into(),
+            value: None,
+            args: Some(telemetry_format::probe_args(args, redact_args)),
+            result: Some(telemetry_format::probe_result_summary(name, result)),
+        });
     }
 }
 

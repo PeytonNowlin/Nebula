@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 use nebula_mcp::{McpConnectionManager, McpServerConfig, McpToolDescriptor};
 use serde::{Deserialize, Serialize};
 
+use crate::secrets::{resolve_secrets, substitute_string_map, substitute_string_vec, SecretBinding, SecretsStore};
 use crate::RuntimeError;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProbeManifest {
+    #[serde(default)]
+    pub secrets: HashMap<String, SecretBinding>,
     #[serde(default)]
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub probes: HashMap<String, ProbeBinding>,
@@ -23,6 +26,8 @@ pub enum ProbeBinding {
     },
     Command {
         command: Vec<String>,
+        #[serde(default)]
+        env: HashMap<String, String>,
     },
     Mcp {
         server: String,
@@ -31,14 +36,20 @@ pub enum ProbeBinding {
     },
     ReadFile,
     WriteFile,
-    HttpGet,
+    HttpGet {
+        #[serde(default)]
+        headers: HashMap<String, String>,
+    },
     JsonParse,
     EnvGet,
+    SecretGet,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProbeListReport {
     pub manifest: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub secrets: Vec<String>,
     pub probes: Vec<DeclaredProbe>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<HashMap<String, McpServerReport>>,
@@ -55,6 +66,8 @@ pub enum DeclaredProbe {
     Command {
         name: String,
         command: Vec<String>,
+        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+        env: HashMap<String, String>,
     },
     Mcp {
         name: String,
@@ -70,11 +83,16 @@ pub enum DeclaredProbe {
     },
     HttpGet {
         name: String,
+        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+        headers: HashMap<String, String>,
     },
     JsonParse {
         name: String,
     },
     EnvGet {
+        name: String,
+    },
+    SecretGet {
         name: String,
     },
 }
@@ -101,6 +119,42 @@ pub fn read_probe_manifest(path: &Path) -> Result<ProbeManifest, RuntimeError> {
     Ok(manifest)
 }
 
+pub fn prepare_probe_manifest(
+    mut manifest: ProbeManifest,
+    secrets_overlay: Option<&SecretsStore>,
+) -> Result<(ProbeManifest, SecretsStore), RuntimeError> {
+    let secrets = resolve_secrets(&manifest.secrets, secrets_overlay)?;
+    apply_secret_templates(&mut manifest, &secrets)?;
+    Ok((manifest, secrets))
+}
+
+fn apply_secret_templates(manifest: &mut ProbeManifest, secrets: &SecretsStore) -> Result<(), RuntimeError> {
+    for config in manifest.mcp_servers.values_mut() {
+        substitute_string_map(&mut config.env, secrets)?;
+        substitute_string_map(&mut config.headers, secrets)?;
+    }
+
+    for binding in manifest.probes.values_mut() {
+        match binding {
+            ProbeBinding::Jsonl { .. }
+            | ProbeBinding::Mcp { .. }
+            | ProbeBinding::ReadFile
+            | ProbeBinding::WriteFile
+            | ProbeBinding::JsonParse
+            | ProbeBinding::EnvGet
+            | ProbeBinding::SecretGet => {}
+            ProbeBinding::Command { command, env } => {
+                substitute_string_vec(command, secrets)?;
+                substitute_string_map(env, secrets)?;
+            }
+            ProbeBinding::HttpGet { headers } => {
+                substitute_string_map(headers, secrets)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn resolve_manifest_paths(manifest: &mut ProbeManifest, manifest_path: &Path) {
     for config in manifest.mcp_servers.values_mut() {
         if matches!(config.transport, nebula_mcp::McpTransportKind::Stdio) {
@@ -117,7 +171,7 @@ fn resolve_manifest_paths(manifest: &mut ProbeManifest, manifest_path: &Path) {
                     *path = resolve_relative_path(path, manifest_path);
                 }
             }
-            ProbeBinding::Command { command } => {
+            ProbeBinding::Command { command, .. } => {
                 for arg in command {
                     resolve_relative_path_arg(arg, manifest_path);
                 }
@@ -125,9 +179,10 @@ fn resolve_manifest_paths(manifest: &mut ProbeManifest, manifest_path: &Path) {
             ProbeBinding::Mcp { .. }
             | ProbeBinding::ReadFile
             | ProbeBinding::WriteFile
-            | ProbeBinding::HttpGet
+            | ProbeBinding::HttpGet { .. }
             | ProbeBinding::JsonParse
-            | ProbeBinding::EnvGet => {}
+            | ProbeBinding::EnvGet
+            | ProbeBinding::SecretGet => {}
         }
     }
 }
@@ -178,6 +233,9 @@ pub fn list_probe_manifest(path: &Path, discover_mcp: bool) -> Result<ProbeListR
     let manifest = read_probe_manifest(path)?;
     validate_manifest(&manifest)?;
 
+    let mut secret_names: Vec<String> = manifest.secrets.keys().cloned().collect();
+    secret_names.sort();
+
     let mut probes = Vec::new();
     for (name, binding) in &manifest.probes {
         probes.push(declared_probe(name, binding));
@@ -192,6 +250,7 @@ pub fn list_probe_manifest(path: &Path, discover_mcp: bool) -> Result<ProbeListR
 
     Ok(ProbeListReport {
         manifest: path.display().to_string(),
+        secrets: secret_names,
         probes,
         mcp_servers,
     })
@@ -204,9 +263,10 @@ fn probe_name(probe: &DeclaredProbe) -> &str {
         | DeclaredProbe::Mcp { name, .. }
         | DeclaredProbe::ReadFile { name }
         | DeclaredProbe::WriteFile { name }
-        | DeclaredProbe::HttpGet { name }
+        | DeclaredProbe::HttpGet { name, .. }
         | DeclaredProbe::JsonParse { name }
-        | DeclaredProbe::EnvGet { name } => name,
+        | DeclaredProbe::EnvGet { name }
+        | DeclaredProbe::SecretGet { name } => name,
     }
 }
 
@@ -216,9 +276,10 @@ fn declared_probe(name: &str, binding: &ProbeBinding) -> DeclaredProbe {
             name: name.to_string(),
             path: path.as_ref().map(|p| p.display().to_string()),
         },
-        ProbeBinding::Command { command } => DeclaredProbe::Command {
+        ProbeBinding::Command { command, env } => DeclaredProbe::Command {
             name: name.to_string(),
             command: command.clone(),
+            env: env.clone(),
         },
         ProbeBinding::Mcp { server, tool } => DeclaredProbe::Mcp {
             name: name.to_string(),
@@ -231,13 +292,17 @@ fn declared_probe(name: &str, binding: &ProbeBinding) -> DeclaredProbe {
         ProbeBinding::WriteFile => DeclaredProbe::WriteFile {
             name: name.to_string(),
         },
-        ProbeBinding::HttpGet => DeclaredProbe::HttpGet {
+        ProbeBinding::HttpGet { headers } => DeclaredProbe::HttpGet {
             name: name.to_string(),
+            headers: headers.clone(),
         },
         ProbeBinding::JsonParse => DeclaredProbe::JsonParse {
             name: name.to_string(),
         },
         ProbeBinding::EnvGet => DeclaredProbe::EnvGet {
+            name: name.to_string(),
+        },
+        ProbeBinding::SecretGet => DeclaredProbe::SecretGet {
             name: name.to_string(),
         },
     }
