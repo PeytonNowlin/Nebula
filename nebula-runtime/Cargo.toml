@@ -15,8 +15,10 @@ serde_json = "1"
 nebula-mcp = { path = "../nebula-mcp" }
 
 [dev-dependencies]
+nebula-host = { path = "../nebula-host" }
 nebula-syntax = { path = "../nebula-syntax" }
 nebula-types = { path = "../nebula-types" }
 nebula-load = { path = "../nebula-load" }
+nebula-test-support = { path = "../nebula-test-support" }
 jsonschema = "0.29"
 serde_json = "1"

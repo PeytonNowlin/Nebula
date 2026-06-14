@@ -1,0 +1,39 @@
+-- Deploy readiness runbook: retry health checks via probes, log each attempt,
+-- and notify ops when the service becomes ready or retries are exhausted.
+
+sector checks {
+  fn is_ready(attempt: Int) -> Bool {
+    return attempt eq 3;
+  }
+}
+
+mission main {
+  probe check_health(attempt: Str) -> Void;
+  probe log(level: Str, message: Str) -> Void;
+  probe notify(channel: Str, message: Str) -> Void;
+
+  let max_attempts: Int = 3;
+  let mut attempts: Int = 0;
+  let mut succeeded: Bool = false;
+
+  telemetry
+    while attempts lt max_attempts do
+      set attempts = attempts plus 1;
+      call check_health(attempt: int_to_str(attempts));
+      call log(level: "info", message: int_to_str(attempts));
+
+      if checks.is_ready(attempts) then
+        set succeeded = true;
+        set attempts = max_attempts;
+      end
+    end
+  end
+
+  if succeeded then
+    call notify(channel: "ops", message: "healthy");
+    print("ready");
+  else
+    call notify(channel: "ops", message: "unhealthy after retries");
+    print("failed");
+  end
+}

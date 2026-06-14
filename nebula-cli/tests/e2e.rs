@@ -204,6 +204,38 @@ fn cli_probes_list_mcp_discovers_tools() {
 }
 
 #[test]
+fn cli_run_runbook_deploy_readiness() {
+    let output = Command::new(nebula_bin())
+        .arg("run")
+        .arg(workspace_root().join("examples/runbook.neb"))
+        .arg("--probes")
+        .arg(workspace_root().join("probes/runbook.json"))
+        .output()
+        .expect("spawn nebula run runbook");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "ready"
+    );
+}
+
+#[test]
+fn cli_check_runbook_passes() {
+    let output = Command::new(nebula_bin())
+        .arg("check")
+        .arg("--json")
+        .arg(workspace_root().join("examples/runbook.neb"))
+        .output()
+        .expect("spawn nebula check runbook");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "[]");
+}
+
+#[test]
 fn cli_check_fails_on_type_error() {
     let path = workspace_root().join("examples/hello.neb");
     let mut bad = std::fs::read_to_string(&path).expect("read hello");

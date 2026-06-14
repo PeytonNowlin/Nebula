@@ -111,6 +111,7 @@ cargo run -- ir examples/hello.neb --json
 # Run with observation
 cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
 cargo run -- run examples/agent_counter.neb --probes probes/host.json
+cargo run -- run examples/runbook.neb --probes probes/runbook.json
 
 # Discover MCP tools before authoring probe calls
 cargo run -- probes list --probes probes/mcp_stdio.json --mcp --json
@@ -336,6 +337,7 @@ Type checking reports multiple errors at once with source spans (`NEB-T002`, `NE
 | `examples/push_demo.neb` | Lists and `push` / `len` builtins |
 | `examples/import_demo.neb` | Importing `std/math.neb` |
 | `examples/agent_counter.neb` | Probes, telemetry, mutable state |
+| `examples/runbook.neb` | Deploy readiness runbook: sectors, retry loop, command + MCP probes |
 
 ## Project structure
 
