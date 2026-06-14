@@ -43,6 +43,66 @@ mission main {
 }
 
 #[test]
+fn parse_if_while_with_end() {
+    let src = r#"
+mission main {
+  let mut i: Int = 0;
+
+  while i less than 3 do
+    set i = i plus 1;
+  end
+
+  if i eq 3 then
+    print("ok");
+  else
+    print("no");
+  end
+}
+"#;
+    parse(src).expect("if/while with end should parse");
+}
+
+#[test]
+fn parse_nested_if_with_end() {
+    let src = r#"
+mission main {
+  let x: Int = 1;
+
+  if x eq 1 then
+    if x lt 5 then
+      print("nested");
+    end
+  end
+}
+"#;
+    parse(src).expect("nested if with end should parse");
+}
+
+#[test]
+fn parse_brace_blocks_still_work() {
+    let src = r#"
+mission main {
+  while true do {
+    print("loop");
+  }
+}
+"#;
+    parse(src).expect("brace blocks should still parse");
+}
+
+#[test]
+fn parse_telemetry_with_end() {
+    let src = r#"
+mission main {
+  telemetry
+    print("trace");
+  end
+}
+"#;
+    parse(src).expect("telemetry with end should parse");
+}
+
+#[test]
 fn parse_import_with_semicolon() {
     let src = r#"
 import "../std/math.neb";

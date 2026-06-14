@@ -303,12 +303,19 @@ impl Parser {
         self.advance();
         let condition = self.parse_expr()?;
         self.expect(TokenKind::Then, "then")?;
-        let then_block = self.parse_block()?;
-        let else_block = if self.match_kind(TokenKind::Else).is_some() {
-            Some(self.parse_block()?)
+        let (then_block, then_brace) =
+            self.parse_block(&[TokenKind::Else, TokenKind::End])?;
+        let (else_block, else_brace) = if self.match_kind(TokenKind::Else).is_some() {
+            let (block, brace) = self.parse_block(&[TokenKind::End])?;
+            (Some(block), brace)
         } else {
-            None
+            (None, true)
         };
+
+        if !then_brace || else_block.is_some() && !else_brace {
+            self.expect(TokenKind::End, "end")?;
+        }
+
         Ok(Stmt::If {
             condition,
             then_block,
@@ -320,7 +327,10 @@ impl Parser {
         self.advance();
         let condition = self.parse_expr()?;
         self.expect(TokenKind::Do, "do")?;
-        let body = self.parse_block()?;
+        let (body, brace_style) = self.parse_block(&[TokenKind::End])?;
+        if !brace_style {
+            self.expect(TokenKind::End, "end")?;
+        }
         Ok(Stmt::While { condition, body })
     }
 
@@ -336,22 +346,46 @@ impl Parser {
 
     fn parse_telemetry_stmt(&mut self) -> Result<Stmt, ParseError> {
         self.advance();
-        self.expect(TokenKind::LBrace, "{")?;
-        let mut body = Vec::new();
-        while self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
-            body.push(self.parse_stmt()?);
+        let (body, brace_style) = self.parse_block(&[TokenKind::End])?;
+        if !brace_style {
+            self.expect(TokenKind::End, "end")?;
         }
-        self.expect(TokenKind::RBrace, "}")?;
         Ok(Stmt::Telemetry { body })
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Spanned<Stmt>>, ParseError> {
-        self.expect(TokenKind::LBrace, "{")?;
-        let mut stmts = Vec::new();
-        while self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
-            stmts.push(self.parse_stmt()?);
+    fn parse_block(
+        &mut self,
+        terminators: &[TokenKind],
+    ) -> Result<(Vec<Spanned<Stmt>>, bool), ParseError> {
+        if self.peek().map(|t| &t.kind) == Some(&TokenKind::LBrace) {
+            self.advance();
+            let mut stmts = Vec::new();
+            while self.peek().map(|t| &t.kind) != Some(&TokenKind::RBrace) {
+                stmts.push(self.parse_stmt()?);
+            }
+            self.expect(TokenKind::RBrace, "}")?;
+            Ok((stmts, true))
+        } else {
+            Ok((self.parse_end_block(terminators)?, false))
         }
-        self.expect(TokenKind::RBrace, "}")?;
+    }
+
+    fn parse_end_block(
+        &mut self,
+        terminators: &[TokenKind],
+    ) -> Result<Vec<Spanned<Stmt>>, ParseError> {
+        let mut stmts = Vec::new();
+        loop {
+            match self.peek().map(|t| t.kind.clone()) {
+                Some(kind) if terminators.contains(&kind) => break,
+                Some(_) => stmts.push(self.parse_stmt()?),
+                None => {
+                    return Err(ParseError::Eof {
+                        span: self.eof_span(),
+                    });
+                }
+            }
+        }
         Ok(stmts)
     }
 

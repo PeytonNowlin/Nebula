@@ -65,14 +65,17 @@ stmt           = let_stmt | set_stmt | if_stmt | while_stmt | emit_stmt
                | return_stmt | expr_stmt | telemetry_stmt | call_stmt ;
 let_stmt       = "let" [ "mut" ] ident ":" type "=" expr ";" ;
 set_stmt       = "set" ident "=" expr ";" ;
-if_stmt        = "if" expr "then" block [ "else" block ] ;
-while_stmt     = "while" expr "do" block ;
+if_stmt        = "if" expr "then" block [ "else" block ] end_block_suffix ;
+while_stmt     = "while" expr "do" block end_block_suffix ;
+end_block_suffix = /* empty for brace blocks */ | "end" ;
 emit_stmt      = "emit" expr ";" ;
 return_stmt    = "return" expr ";" ;
 expr_stmt      = expr ";" ;
 call_stmt      = "call" ident "(" [ arg_list ] ")" ";" ;
-telemetry_stmt = "telemetry" "{" { stmt } "}" ;
-block          = "{" { stmt } "}" ;
+telemetry_stmt = "telemetry" block end_block_suffix ;
+block          = brace_block | end_block ;
+brace_block    = "{" { stmt } "}" ;
+end_block      = { stmt } ;
 arg_list       = arg { "," arg } ;
 arg            = ident ":" expr ;
 

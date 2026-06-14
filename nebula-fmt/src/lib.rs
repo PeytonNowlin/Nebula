@@ -160,31 +160,29 @@ fn format_stmt(out: &mut String, stmt: &Stmt, level: usize) {
         } => {
             out.push_str("if ");
             format_expr(out, &condition.node);
-            out.push_str(" then {\n");
+            out.push_str(" then\n");
             for s in then_block {
                 format_stmt(out, &s.node, level + 1);
             }
-            indent(out, level);
-            out.push('}');
             if let Some(else_stmts) = else_block {
-                out.push_str(" else {\n");
+                indent(out, level);
+                out.push_str("else\n");
                 for s in else_stmts {
                     format_stmt(out, &s.node, level + 1);
                 }
-                indent(out, level);
-                out.push('}');
             }
-            out.push('\n');
+            indent(out, level);
+            out.push_str("end\n");
         }
         Stmt::While { condition, body } => {
             out.push_str("while ");
             format_expr(out, &condition.node);
-            out.push_str(" do {\n");
+            out.push_str(" do\n");
             for s in body {
                 format_stmt(out, &s.node, level + 1);
             }
             indent(out, level);
-            out.push_str("}\n");
+            out.push_str("end\n");
         }
         Stmt::Emit(expr) => {
             out.push_str("emit ");
@@ -215,12 +213,12 @@ fn format_stmt(out: &mut String, stmt: &Stmt, level: usize) {
             out.push_str(");\n");
         }
         Stmt::Telemetry { body } => {
-            out.push_str("telemetry {\n");
+            out.push_str("telemetry\n");
             for s in body {
                 format_stmt(out, &s.node, level + 1);
             }
             indent(out, level);
-            out.push_str("}\n");
+            out.push_str("end\n");
         }
     }
 }
