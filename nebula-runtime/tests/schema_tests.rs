@@ -3,6 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use jsonschema::{Resource, Retrieve, Uri, Validator};
+use nebula_ir::lower;
+use nebula_runtime::Runtime;
+use nebula_syntax::parse;
+use nebula_types::typecheck;
 use serde_json::Value;
 
 fn workspace_root() -> PathBuf {
@@ -81,9 +85,35 @@ fn load_schema(name: &str) -> Validator {
 #[test]
 fn telemetry_event_schema_matches_runtime_output() {
     let validator = load_schema("telemetry-event.schema.json");
-    let sample_path = workspace_root().join("telemetry.jsonl");
-    let source = fs::read_to_string(&sample_path).expect("read telemetry.jsonl");
+    let src = r#"
+mission main {
+  probe log(level: Str, message: Str) -> Void;
+  let mut count: Int = 0;
+  telemetry
+    let base: Int = 1;
+    set count = count plus 1;
+    call log(level: "info", message: "ready");
+  end
+}
+"#;
+    let program = parse(src).expect("parse");
+    let typed = typecheck(&program).expect("typecheck");
+    let ir = lower(&typed).expect("lower");
 
+    let telemetry_path = std::env::temp_dir().join(format!(
+        "nebula-schema-telemetry-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let _ = fs::remove_file(&telemetry_path);
+
+    let mut runtime =
+        Runtime::new(&ir).with_telemetry(telemetry_path.to_string_lossy().into_owned());
+    runtime.run(&ir).expect("run");
+
+    let source = fs::read_to_string(&telemetry_path).expect("read telemetry output");
     for line in source.lines().filter(|line| !line.trim().is_empty()) {
         let event: Value = serde_json::from_str(line).expect("parse telemetry line");
         if let Err(err) = validator.validate(&event) {
