@@ -1,3 +1,4 @@
+mod diagnostic_extract;
 mod lexer;
 mod parser;
 

@@ -1,5 +1,6 @@
 mod builtins;
 mod checker;
+mod diagnostic_extract;
 mod error;
 mod expr;
 mod program;
@@ -12,7 +13,7 @@ use nebula_ast::Program;
 
 pub use error::TypeError;
 pub use program::{FnInfo, ProbeInfo, StructInfo, TypedProgram};
-pub use report::{report_with_source, TypecheckErrors};
+pub use report::{diagnostics_from_type_errors, report_with_source, TypecheckErrors};
 
 use checker::Checker;
 

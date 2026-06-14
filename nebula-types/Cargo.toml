@@ -4,14 +4,21 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+inventory.workspace = true
 nebula-ast = { path = "../nebula-ast" }
 nebula-builtins = { path = "../nebula-builtins" }
 miette.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+nebula-diagnostics = { path = "../nebula-diagnostics" }
 nebula-syntax = { path = "../nebula-syntax" }
+serde_json.workspace = true
 
 [[test]]
 name = "sector_tests"
 path = "tests/sector_tests.rs"
+
+[[test]]
+name = "diagnostic_json_tests"
+path = "tests/diagnostic_json_tests.rs"

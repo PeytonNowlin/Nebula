@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use miette::{Diagnostic, NamedSource, Report};
+use nebula_ast::{DiagnosticJson, NebError};
 use thiserror::Error;
 
 use crate::TypeError;
@@ -30,6 +31,26 @@ impl TypecheckErrors {
     pub fn iter(&self) -> std::slice::Iter<'_, TypeError> {
         self.errors.iter()
     }
+
+    pub fn to_diagnostic_json(
+        &self,
+        path: impl AsRef<Path>,
+        source: &str,
+    ) -> Vec<DiagnosticJson> {
+        let file = path.as_ref().display().to_string();
+        self.errors()
+            .iter()
+            .map(|err| err.to_diagnostic_json(Some(&file), Some(source)))
+            .collect()
+    }
+}
+
+pub fn diagnostics_from_type_errors(
+    path: impl AsRef<Path>,
+    source: &str,
+    errors: &TypecheckErrors,
+) -> Vec<DiagnosticJson> {
+    errors.to_diagnostic_json(path, source)
 }
 
 /// Attach source text so miette can render spans and labels.
