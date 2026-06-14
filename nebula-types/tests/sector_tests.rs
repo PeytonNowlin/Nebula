@@ -2,6 +2,18 @@ use nebula_syntax::parse;
 use nebula_types::{typecheck, TypeError};
 
 #[test]
+fn str_plus_str_concatenation_typechecks() {
+    let src = r#"
+mission main {
+  let greeting: Str = "Hello" plus " world";
+  print(greeting);
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("Str plus Str should typecheck");
+}
+
+#[test]
 fn mission_requires_qualified_sector_calls() {
     let src = r#"
 sector math {

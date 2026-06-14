@@ -591,16 +591,27 @@ impl Checker {
                 let lty = self.check_expr_inner(&left.node, scope, errors);
                 let rty = self.check_expr_inner(&right.node, scope, errors);
                 match op {
-                    BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => {
+                    BinaryOp::Plus => {
+                        if lty == Type::Str && rty == Type::Str {
+                            Type::Str
+                        } else if lty == Type::Int && rty == Type::Int {
+                            Type::Int
+                        } else {
+                            errors.push(TypeError::Mismatch {
+                                expected: "Int or Str operands (matching types)".into(),
+                                found: format!("{} and {}", lty.display(), rty.display()),
+                                span: left.span.clone(),
+                            });
+                            Type::Int
+                        }
+                    }
+                    BinaryOp::Minus | BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => {
                         if lty != Type::Int || rty != Type::Int {
                             errors.push(TypeError::Mismatch {
                                 expected: "Int operands".into(),
                                 found: format!("{} and {}", lty.display(), rty.display()),
                                 span: left.span.clone(),
                             });
-                        }
-                        if matches!(op, BinaryOp::Plus) && lty == Type::Str && rty == Type::Str {
-                            return Type::Str;
                         }
                         Type::Int
                     }
