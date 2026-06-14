@@ -92,6 +92,9 @@ enum Commands {
         telemetry: Option<PathBuf>,
         #[arg(long)]
         probes: Option<PathBuf>,
+        /// Emit a structured JSON compile record on stdout
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -266,11 +269,12 @@ fn main() -> ExitCode {
             out,
             telemetry,
             probes,
+            json,
         } => {
             let host = host_with_config(probes, telemetry);
-            match compile(&host, &file, target, out) {
+            match compile(&host, &file, target, out, json) {
                 Ok(()) => ExitCode::SUCCESS,
-                Err(err) => emit_failure(err, None, false),
+                Err(err) => emit_failure(err, None, json),
             }
         }
     }
@@ -415,19 +419,38 @@ fn list_probes(host: &Host, path: &PathBuf, discover_mcp: bool, json: bool) -> m
     Ok(())
 }
 
-fn compile(host: &Host, path: &PathBuf, target: CompileTarget, out: PathBuf) -> miette::Result<()> {
+fn compile(
+    host: &Host,
+    path: &PathBuf,
+    target: CompileTarget,
+    out: PathBuf,
+    json: bool,
+) -> miette::Result<()> {
     match target {
-        CompileTarget::Python => compile_python(host, path, out),
+        CompileTarget::Python => compile_python(host, path, out, json),
     }
 }
 
-fn compile_python(host: &Host, path: &PathBuf, out: PathBuf) -> miette::Result<()> {
+fn compile_python(host: &Host, path: &PathBuf, out: PathBuf, json: bool) -> miette::Result<()> {
     let result = host.try_emit_python(path, &out)?;
-    println!(
-        "compiled {} module(s) to {}",
-        result.modules_emitted,
-        out.display()
-    );
-    println!("run: python {}", result.entry_module.display());
+    if json {
+        let record = serde_json::json!({
+            "target": "python",
+            "out_dir": out.display().to_string(),
+            "entry_module": result.entry_module.display().to_string(),
+            "modules_emitted": result.modules_emitted,
+        });
+        println!(
+            "{}",
+            serde_json::to_string(&record).expect("serialize compile record")
+        );
+    } else {
+        println!(
+            "compiled {} module(s) to {}",
+            result.modules_emitted,
+            out.display()
+        );
+        println!("run: python {}", result.entry_module.display());
+    }
     Ok(())
 }

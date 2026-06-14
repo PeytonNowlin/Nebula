@@ -42,7 +42,7 @@ Build once, then invoke subcommands directly or via `cargo run --`:
 | `parse <file> --json [--load]` | Export AST (optionally merged workspace) |
 | `ir <file> --json` | Export lowered IR |
 | `fmt <file> [--write]` | Canonical formatter |
-| `compile <file> --target python --out <dir>` | Transpile to Python |
+| `compile <file> --target python --out <dir> [--json]` | Transpile to Python (`--json` emits a compile record: target, out dir, entry module, module count) |
 | `probes list --probes <manifest> [--mcp] [--json]` | Inspect probe bindings and MCP tools |
 
 ### Agent-oriented flags

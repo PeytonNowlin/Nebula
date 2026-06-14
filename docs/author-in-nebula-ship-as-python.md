@@ -151,8 +151,8 @@ artifact, so the deployment path is exercised on every change:
 ```yaml
 - name: Build Python deployment artifact
   run: |
-    cargo run --release -- compile examples/io_agent.neb --target python --out dist/
-    python dist/examples/io_agent.py
+    cargo run --release -- compile examples/import_demo.neb --target python --out dist/
+    python dist/examples/import_demo.py
 ```
 
 The interpreter and the Python backend are kept in lockstep by a parity test
