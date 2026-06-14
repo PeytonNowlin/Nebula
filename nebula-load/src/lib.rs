@@ -206,7 +206,8 @@ impl Loader {
 
         for (import_path, span) in imports {
             let resolved = resolve_import_path(&entry_dir, &import_path.node);
-            self.record_import(&self.entry_path, &resolved)?;
+            let entry = self.entry_path.clone();
+            self.record_import(&entry, &resolved)?;
             self.load_file(&resolved, span)?;
         }
 
@@ -214,7 +215,7 @@ impl Loader {
             match &item.node {
                 TopLevel::Sector(sector) => {
                     self.registry
-                        .register_sector(sector, &self.entry_path)?;
+                        .register_sector(sector, &entry_canonical)?;
                 }
                 TopLevel::Mission(mission) => {
                     for mitem in &mission.node.items {
@@ -223,7 +224,7 @@ impl Loader {
                                 "probe",
                                 &probe.node.name.node,
                                 probe.node.name.span.clone(),
-                                &self.entry_path,
+                                &entry_canonical,
                                 &mut self.registry.probes,
                             )?;
                         }

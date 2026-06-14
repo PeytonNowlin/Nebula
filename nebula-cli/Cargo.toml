@@ -15,6 +15,7 @@ nebula-types = { path = "../nebula-types" }
 nebula-ir = { path = "../nebula-ir" }
 nebula-runtime = { path = "../nebula-runtime" }
 nebula-fmt = { path = "../nebula-fmt" }
+nebula-python = { path = "../nebula-python" }
 clap.workspace = true
 miette.workspace = true
 

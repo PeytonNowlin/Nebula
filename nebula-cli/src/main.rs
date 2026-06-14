@@ -7,6 +7,7 @@ use miette::{IntoDiagnostic, Report};
 use nebula_fmt::format_program;
 use nebula_ir::lower;
 use nebula_load::load_workspace;
+use nebula_python::{emit_workspace, EmitOptions};
 use nebula_runtime::Runtime;
 use nebula_syntax::parse;
 use nebula_types::{report_with_source, typecheck};
@@ -39,6 +40,24 @@ enum Commands {
         #[arg(long)]
         probes: Option<PathBuf>,
     },
+    /// Compile a Nebula file to another target language
+    Compile {
+        file: PathBuf,
+        #[arg(long, value_enum, default_value_t = CompileTarget::Python)]
+        target: CompileTarget,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        telemetry: Option<PathBuf>,
+        #[arg(long)]
+        probes: Option<PathBuf>,
+    },
+}
+
+#[derive(Clone, Copy, Default, clap::ValueEnum)]
+enum CompileTarget {
+    #[default]
+    Python,
 }
 
 struct CompiledSource {
@@ -53,6 +72,13 @@ fn main() -> ExitCode {
         Commands::Check { file } => check(&file),
         Commands::Fmt { file, write } => fmt(&file, write),
         Commands::Run { file, telemetry, probes } => run(&file, telemetry, probes),
+        Commands::Compile {
+            file,
+            target,
+            out,
+            telemetry,
+            probes,
+        } => compile(&file, target, out, telemetry, probes),
     };
 
     match result {
@@ -136,5 +162,52 @@ fn run(
     }
 
     runtime.run(&ir).map_err(Report::new)?;
+    Ok(())
+}
+
+fn compile(
+    path: &PathBuf,
+    target: CompileTarget,
+    out: PathBuf,
+    telemetry: Option<PathBuf>,
+    probes: Option<PathBuf>,
+) -> miette::Result<()> {
+    match target {
+        CompileTarget::Python => compile_python(path, out, telemetry, probes),
+    }
+}
+
+fn compile_python(
+    path: &PathBuf,
+    out: PathBuf,
+    telemetry: Option<PathBuf>,
+    probes: Option<PathBuf>,
+) -> miette::Result<()> {
+    let source = read_file(path)?;
+    let program = parse(&source).map_err(|err| report_with_source(path, &source, err))?;
+    let loaded =
+        load_workspace(path, program).map_err(|err| report_with_source(path, &source, err))?;
+    let typed = typecheck(&loaded.merged)
+        .map_err(|errors| report_with_source(path, &source, errors))?;
+    let ir = lower(&typed).map_err(Report::new)?;
+
+    let result = emit_workspace(
+        &loaded,
+        &ir,
+        &EmitOptions {
+            out_dir: out.clone(),
+            entry_path: path.clone(),
+            probe_manifest: probes,
+            telemetry_path: telemetry,
+        },
+    )
+    .map_err(Report::new)?;
+
+    println!(
+        "compiled {} module(s) to {}",
+        result.modules_emitted,
+        out.display()
+    );
+    println!("run: python {}", result.entry_module.display());
     Ok(())
 }

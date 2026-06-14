@@ -12,7 +12,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
 - **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
 - **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
-- **Full pipeline** — parse → load/merge → typecheck → IR → interpret, with `check`, `fmt`, and `run` CLI commands.
+- **Full pipeline** — parse → load/merge → typecheck → IR → interpret or transpile, with `check`, `fmt`, `run`, and `compile` CLI commands.
 
 ## Requirements
 
@@ -49,12 +49,16 @@ The `nebula` binary provides three subcommands:
 | `nebula run <file>` | Typecheck and execute via the interpreter |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
 | `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
+| `nebula compile <file> --target python --out <dir>` | Transpile to a multi-module Python package |
+| `nebula compile <file> --target python --out <dir> --probes <path>` | Embed probe manifest defaults in the entry module |
 
 ```bash
 cargo run -- check examples/fizzbuzz.neb
 cargo run -- fmt examples/hello.neb
 cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
 cargo run -- run examples/agent_counter.neb --probes probes/host.json
+cargo run -- compile examples/import_demo.neb --target python --out dist/
+python dist/examples/import_demo.py
 ```
 
 ## Language overview
@@ -206,15 +210,25 @@ Rust workspace crates, each handling one stage of the pipeline:
 | `nebula-runtime` | Tree-walking interpreter |
 | `nebula-fmt` | Canonical formatter |
 | `nebula-cli` | `nebula` command-line tool |
+| `nebula-python` | IR → Python transpiler and `nebula_runtime` shim bundler |
 | `nebula-test-support` | Integration tests, golden files, and shared pipeline helpers (not published) |
 
 The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). The GBNF grammar for constrained generation is at [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
 
 [`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`). Probe host configuration examples live in [`probes/host.json`](probes/host.json); see [`scripts/probe_ok.py`](scripts/probe_ok.py) for a minimal external command handler.
 
+## Python transpilation
+
+`nebula compile --target python --out <dir>` emits a runnable package:
+
+- One `.py` module per `.neb` file in the import graph (e.g. `examples/import_demo.py`, `std/math.py`)
+- A copied `nebula_runtime/` shim providing builtins, probes, telemetry, truthiness, and `NEB-R004` divide-by-zero checks
+- Sector namespaces as Python classes with `@staticmethod` functions
+
+The entry module includes `if __name__ == "__main__"` calling `run_main(main)`.
+
 ## Roadmap (not yet implemented)
 
-- Python transpiler (`nebula compile --target python`)
 - MCP probe transport (command probe protocol is the current integration point)
 - Loadable stdlib beyond importable `.neb` modules
 

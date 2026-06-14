@@ -158,7 +158,15 @@ mission main {
 | `NEB-P` | Probe |
 | `NEB-L` | Module load / import |
 
-## 9. Builtins
+## 9. Python transpilation
+
+Nebula can be lowered to IR and transpiled to Python (`nebula compile --target python --out <dir>`).
+
+- Output mirrors the `.neb` import graph as a multi-module package.
+- Semantics are implemented by the `nebula_runtime` shim (builtins, probes, telemetry, truthiness, runtime errors).
+- Sector functions become `@staticmethod` methods on sector classes; qualified calls use `sector.fn(...)`.
+
+## 10. Builtins
 
 Provided by the runtime standard library:
 

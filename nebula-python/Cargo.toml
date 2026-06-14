@@ -1,0 +1,17 @@
+[package]
+name = "nebula-python"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nebula-ast = { path = "../nebula-ast" }
+nebula-ir = { path = "../nebula-ir" }
+nebula-load = { path = "../nebula-load" }
+miette = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+nebula-syntax = { path = "../nebula-syntax" }
+nebula-types = { path = "../nebula-types" }
+nebula-ir = { path = "../nebula-ir" }
+nebula-load = { path = "../nebula-load" }
