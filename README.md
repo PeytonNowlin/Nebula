@@ -10,7 +10,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 - **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
 - **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (structured JSONL `log` handler by default, external commands via `--probes` manifest).
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
-- **Imports** — compose programs from library modules with cycle and duplicate detection.
+- **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
 - **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
 - **Full pipeline** — parse → load/merge → typecheck → IR → interpret, with `check`, `fmt`, and `run` CLI commands.
 
@@ -48,11 +48,13 @@ The `nebula` binary provides three subcommands:
 | `nebula fmt <file> --write` | Rewrite the file in place |
 | `nebula run <file>` | Typecheck and execute via the interpreter |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
+| `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
 
 ```bash
 cargo run -- check examples/fizzbuzz.neb
 cargo run -- fmt examples/hello.neb
 cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
+cargo run -- run examples/agent_counter.neb --probes probes/host.json
 ```
 
 ## Language overview
@@ -102,7 +104,11 @@ Brace blocks (`{ ... }`) remain valid and are still used for `sector`, `mission`
 
 `Int`, `Float`, `Bool`, `Str`, `Void`, `List<T>`, `Map<K, V>`, `Option<T>`, and function types `fn(T1, T2) -> R`. All bindings, parameters, and returns require explicit annotations.
 
+Bare `None` is polymorphic: it type-checks against any `Option<T>`. Use `Some(x)` when you need a concrete `Option<T>`.
+
 String concatenation uses keyword `plus`: `"Hello" plus " world"` (both operands must be `Str`).
+
+Field access works on expressions, not just variables: `geo.origin().x`, `p.coords.y`, `(get_point()).x`.
 
 ### Builtins
 
@@ -171,6 +177,8 @@ Import paths are relative to the importing file. Library modules may contain sec
 | `NEB-P` | Probe |
 | `NEB-L` | Module load / import |
 
+Type checking reports multiple errors at once with source spans (`NEB-T002`, `NEB-T009`, etc.) rather than stopping at the first failure.
+
 ## Examples
 
 | File | Demonstrates |
@@ -196,10 +204,11 @@ Rust workspace crates, each handling one stage of the pipeline:
 | `nebula-runtime` | Tree-walking interpreter |
 | `nebula-fmt` | Canonical formatter |
 | `nebula-cli` | `nebula` command-line tool |
+| `nebula-test-support` | Integration tests, golden files, and shared pipeline helpers (not published) |
 
 The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). The GBNF grammar for constrained generation is at [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
 
-[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`).
+[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`). Probe host configuration examples live in [`probes/host.json`](probes/host.json); see [`scripts/probe_ok.py`](scripts/probe_ok.py) for a minimal external command handler.
 
 ## Roadmap (not yet implemented)
 
@@ -210,8 +219,11 @@ The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md)
 ## Development
 
 ```bash
-# Run all tests
+# Run all tests (unit, integration, CLI e2e, golden diagnostics/fmt)
 cargo test
+
+# Refresh golden files after intentional output changes
+NEBULA_UPDATE_GOLDEN=1 cargo test -p nebula-test-support
 
 # Format Rust code
 cargo fmt
