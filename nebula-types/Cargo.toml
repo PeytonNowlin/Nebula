@@ -10,7 +10,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 nebula-syntax = { path = "../nebula-syntax" }
-insta.workspace = true
 
 [[test]]
 name = "sector_tests"

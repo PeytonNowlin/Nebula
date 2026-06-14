@@ -8,6 +8,3 @@ nebula-ast = { path = "../nebula-ast" }
 logos.workspace = true
 miette.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-insta.workspace = true
