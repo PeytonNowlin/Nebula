@@ -72,9 +72,81 @@ pub fn read_probe_manifest(path: &Path) -> Result<ProbeManifest, RuntimeError> {
     let source = fs::read_to_string(path).map_err(|err| RuntimeError::Error {
         message: format!("failed to read probe manifest `{}`: {err}", path.display()),
     })?;
-    serde_json::from_str(&source).map_err(|err| RuntimeError::Error {
-        message: format!("invalid probe manifest `{}`: {err}", path.display()),
-    })
+    let mut manifest: ProbeManifest = serde_json::from_str(&source).map_err(|err| {
+        RuntimeError::Error {
+            message: format!("invalid probe manifest `{}`: {err}", path.display()),
+        }
+    })?;
+    resolve_manifest_paths(&mut manifest, path);
+    Ok(manifest)
+}
+
+fn resolve_manifest_paths(manifest: &mut ProbeManifest, manifest_path: &Path) {
+    for config in manifest.mcp_servers.values_mut() {
+        if matches!(config.transport, nebula_mcp::McpTransportKind::Stdio) {
+            for arg in &mut config.command {
+                resolve_relative_path_arg(arg, manifest_path);
+            }
+        }
+    }
+
+    for binding in manifest.probes.values_mut() {
+        match binding {
+            ProbeBinding::Jsonl { path } => {
+                if let Some(path) = path {
+                    *path = resolve_relative_path(path, manifest_path);
+                }
+            }
+            ProbeBinding::Command { command } => {
+                for arg in command {
+                    resolve_relative_path_arg(arg, manifest_path);
+                }
+            }
+            ProbeBinding::Mcp { .. } => {}
+        }
+    }
+}
+
+fn resolve_relative_path_arg(arg: &mut String, manifest_path: &Path) {
+    let candidate = Path::new(arg.as_str());
+    if candidate.is_absolute() {
+        return;
+    }
+    if !(arg.contains('/') || arg.contains('\\') || arg.starts_with('.')) {
+        return;
+    }
+    *arg = resolve_relative_path(candidate, manifest_path)
+        .display()
+        .to_string();
+}
+
+fn resolve_relative_path(path: &Path, manifest_path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+
+    let manifest_dir = manifest_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let candidates = [
+        manifest_dir.join(path),
+        manifest_dir
+            .parent()
+            .map(|parent| parent.join(path))
+            .unwrap_or_else(|| manifest_dir.join(path)),
+        PathBuf::from(path),
+    ];
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.canonicalize().unwrap_or_else(|_| candidate.clone());
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.parent().is_some_and(|parent| parent.exists()))
+        .unwrap_or_else(|| manifest_dir.join(path))
 }
 
 pub fn list_probe_manifest(path: &Path, discover_mcp: bool) -> Result<ProbeListReport, RuntimeError> {

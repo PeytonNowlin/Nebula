@@ -1,6 +1,6 @@
 # Nebula
 
-Nebula is a general-purpose programming language designed for AI agent authors. Every construct favors machine parseability over human brevity: operators are spelled as keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain exposes structured error codes for reliable agent feedback.
+Nebula is a general-purpose programming language designed for AI agent authors. Every construct favors machine parseability over human brevity: operators are spelled as keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain exposes structured error codes and JSON output for reliable agent feedback.
 
 This repository contains the Nebula compiler and interpreter, implemented in Rust.
 
@@ -11,8 +11,10 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 - **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (`jsonl`, external `command`, or **MCP** via `--probes` manifest).
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
 - **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
-- **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
-- **Full pipeline** — parse → load/merge → typecheck → IR → interpret or transpile, with `check`, `fmt`, `run`, and `compile` CLI commands.
+- **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation; deprecated syntax forms are rejected at parse time (`NEB-S004`, `NEB-S005`).
+- **Structured JSON I/O** — `check`, `run`, `parse`, `ir`, and `probes list` support `--json` for machine-readable diagnostics, AST export, IR export, and probe introspection.
+- **In-process embedding** — the `nebula-host` crate exposes `check_source`, `run_source`, and `list_probes` for agent runtimes that want to avoid subprocess overhead.
+- **Full pipeline** — parse → load/merge → typecheck → IR → interpret or transpile.
 
 ## Requirements
 
@@ -40,28 +42,111 @@ Hello from Nebula
 
 ## CLI
 
-The `nebula` binary provides three subcommands:
+The `nebula` binary provides seven subcommands: `check`, `parse`, `ir`, `fmt`, `run`, `probes`, and `compile`.
+
+### Validation and execution
 
 | Command | Description |
 |---------|-------------|
 | `nebula check <file>` | Parse, resolve imports, and typecheck without running |
-| `nebula fmt <file>` | Parse, resolve imports, and print canonical formatted entry file |
-| `nebula fmt <file> --write` | Format the entry file and every imported module in place |
+| `nebula check <file> --json` | On success, print `[]` to stdout; on failure, print a JSON diagnostic array to stderr |
 | `nebula run <file>` | Typecheck and execute via the interpreter |
+| `nebula run <file> --json` | Same as `check --json` on failure; stdout is reserved for program output when successful |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
 | `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
-| `nebula probes list --probes <path> [--mcp] [--json]` | List manifest probe bindings; `--mcp` queries live MCP `tools/list` |
+
+### Introspection and export
+
+| Command | Description |
+|---------|-------------|
+| `nebula parse <file> --json` | Export the parsed AST as JSON on stdout |
+| `nebula parse <file> --json --load` | Resolve imports and export the merged workspace AST |
+| `nebula ir <file> --json` | Typecheck, lower, and export IR as JSON on stdout |
+| `nebula probes list --probes <path>` | List manifest probe bindings |
+| `nebula probes list --probes <path> --mcp` | Also query each MCP server's live `tools/list` catalog |
+| `nebula probes list --probes <path> --json [--mcp]` | Emit the probe report as JSON on stdout |
+
+### Formatting and transpilation
+
+| Command | Description |
+|---------|-------------|
+| `nebula fmt <file>` | Parse, resolve imports, and print canonical formatted entry file |
+| `nebula fmt <file> --write` | Format the entry file and every imported module in place |
 | `nebula compile <file> --target python --out <dir>` | Transpile to a multi-module Python package |
 | `nebula compile <file> --target python --out <dir> --probes <path>` | Embed probe manifest defaults in the entry module |
 
+### JSON diagnostic format
+
+When `--json` is passed to `check` or `run`, failures emit a JSON array of diagnostic objects on **stderr**:
+
+```json
+[
+  {
+    "code": "NEB-T002",
+    "span": {
+      "file": "example.neb",
+      "start": 42,
+      "end": 58,
+      "line": 3,
+      "column": 15
+    },
+    "message": "type mismatch: expected Int, found Str"
+  }
+]
+```
+
+Each record has `code`, `message`, and an optional `span` with byte offsets and 1-based line/column when source text is available. Type checking emits one record per error. Successful `check --json` prints `[]` to stdout.
+
+### Example commands
+
 ```bash
+# Validate
 cargo run -- check examples/fizzbuzz.neb
-cargo run -- fmt examples/hello.neb
+cargo run -- check examples/fizzbuzz.neb --json
+
+# Export structure
+cargo run -- parse examples/import_demo.neb --json --load
+cargo run -- ir examples/hello.neb --json
+
+# Run with observation
 cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
 cargo run -- run examples/agent_counter.neb --probes probes/host.json
+
+# Discover MCP tools before authoring probe calls
+cargo run -- probes list --probes probes/mcp_stdio.json --mcp --json
+
+# Transpile
 cargo run -- compile examples/import_demo.neb --target python --out dist/
 python dist/examples/import_demo.py
 ```
+
+## Agent embedding
+
+For agent runtimes that call Nebula in-process instead of shelling out to the CLI, use the `nebula-host` crate:
+
+```rust
+use nebula_host::{Host, HostConfig};
+
+let host = Host::new();
+let check = host.check_source(r#"mission main { let x: Int = 1; }"#);
+assert!(check.ok);
+
+let run = host.run_source(r#"mission main { print("Hello from Nebula"); }"#);
+assert!(run.ok);
+assert_eq!(run.printed, vec!["Hello from Nebula"]);
+```
+
+`HostConfig` supports probe manifests, telemetry paths, and a custom source label for diagnostics. `CheckResult` and `RunResult` return `Vec<DiagnosticJson>` with the same shape as CLI `--json` output.
+
+## JSON schemas
+
+Structured runtime events are documented as JSON Schema files under [`schemas/`](schemas/):
+
+| Schema | Used by |
+|--------|---------|
+| [`telemetry-event.schema.json`](schemas/telemetry-event.schema.json) | `telemetry` block JSONL traces (`step`, `detail`) |
+| [`probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json) | `jsonl` probe handler output (`ts`, `probe`, `args`) |
+| [`nebula-value.schema.json`](schemas/nebula-value.schema.json) | Probe argument values in JSONL and command-probe protocols |
 
 ## Language overview
 
@@ -94,7 +179,7 @@ Symbols inside a `sector` are stored as `sector.name`:
 
 ### Control-flow blocks
 
-`if`, `while`, and `telemetry` use `end`-delimited blocks (brace blocks are rejected with `NEB-S005`):
+`if`, `while`, and `telemetry` use `end`-delimited blocks. Brace blocks for control flow are rejected (`NEB-S005`):
 
 ```nebula
 if count eq 0 then
@@ -105,6 +190,8 @@ end
 ```
 
 Braces (`{ ... }`) are used for `sector`, `mission`, `fn`, and `struct` bodies only.
+
+Comparisons use `lt`, `gt`, `le`, `ge`, `eq`, and `ne` only. Synonyms such as `less than` / `greater than` are rejected (`NEB-S004`).
 
 ### Types
 
@@ -151,7 +238,7 @@ Probes declare capabilities the host is expected to provide. `call` invokes them
 
 | Handler kind | Description |
 |--------------|-------------|
-| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file; schema: [`schemas/probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json)) |
+| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
 | `command` | External process with Nebula's stdin/stdout JSON protocol |
 | `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
 
@@ -209,7 +296,7 @@ Run with MCP probes:
 cargo run -- run examples/agent_counter.neb --probes probes/mcp_stdio.json
 ```
 
-With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event (`schemas/telemetry-event.schema.json`: `step`, `detail`).
+With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event matching [`schemas/telemetry-event.schema.json`](schemas/telemetry-event.schema.json).
 
 ### Imports
 
@@ -228,6 +315,8 @@ Import paths are relative to the importing file. Library modules may contain sec
 | Prefix | Category |
 |--------|----------|
 | `NEB-S` | Syntax / parse |
+| `NEB-S004` | Deprecated comparison keyword (`less than`, `greater than`) |
+| `NEB-S005` | Deprecated brace block for control flow |
 | `NEB-T` | Type |
 | `NEB-R` | Runtime |
 | `NEB-P` | Probe |
@@ -254,12 +343,14 @@ Rust workspace crates, each handling one stage of the pipeline:
 | Crate | Role |
 |-------|------|
 | `nebula-syntax` | Lexer (logos) and hand-written recursive-descent parser |
-| `nebula-ast` | Abstract syntax tree types |
+| `nebula-ast` | Abstract syntax tree types (JSON-serializable) |
 | `nebula-load` | Import resolution and program merging |
 | `nebula-types` | Type checker |
 | `nebula-ir` | Intermediate representation lowering |
 | `nebula-runtime` | Tree-walking interpreter and probe host |
 | `nebula-mcp` | MCP client (stdio + HTTP) for probe transport |
+| `nebula-diagnostics` | Structured `DiagnosticJson` extraction for agent feedback |
+| `nebula-host` | In-process embedding API (`check_source`, `run_source`, `list_probes`) |
 | `nebula-fmt` | Canonical formatter |
 | `nebula-cli` | `nebula` command-line tool |
 | `nebula-python` | IR → Python transpiler and `nebula_runtime` shim bundler |
@@ -282,6 +373,7 @@ The entry module includes `if __name__ == "__main__"` calling `run_main(main)`.
 ## Roadmap (not yet implemented)
 
 - Loadable stdlib beyond importable `.neb` modules
+- JSON Schema for CLI diagnostic objects
 
 ## Development
 

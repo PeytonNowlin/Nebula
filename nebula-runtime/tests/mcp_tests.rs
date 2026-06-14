@@ -105,6 +105,19 @@ fn mcp_http_probe_invokes_mock_server() {
 }
 
 #[test]
+fn mcp_list_tools_resolves_manifest_relative_paths() {
+    let manifest_path = workspace_root().join("probes/mcp_stdio.json");
+    let report = nebula_runtime::list_probe_manifest(&manifest_path, true).expect("list manifest");
+    let server = report
+        .mcp_servers
+        .as_ref()
+        .and_then(|servers| servers.get("local"))
+        .expect("local server report");
+    let tools = server.tools.as_ref().expect("tools discovered");
+    assert!(tools.iter().any(|tool| tool.name == "notify"));
+}
+
+#[test]
 fn mcp_list_tools_reports_notify_from_mock_server() {
     use nebula_mcp::McpConnectionManager;
     use nebula_runtime::list_probe_manifest;
