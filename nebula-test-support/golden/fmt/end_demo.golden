@@ -1,0 +1,13 @@
+mission main {
+  let mut count: Int = 0;
+  while count lt 3 do
+    print(int_to_str(count));
+    set count = count plus 1;
+  end
+  if count eq 3 then
+    print("done");
+  else
+    print("unexpected");
+  end
+}
+

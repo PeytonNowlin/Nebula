@@ -1,0 +1,2 @@
+NEB-T004 [type_error] undefined function `double`
+NEB-T002 [type_error] type mismatch: expected Int, found Void

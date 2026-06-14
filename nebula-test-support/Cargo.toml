@@ -1,11 +1,8 @@
 [package]
-name = "nebula-cli"
+name = "nebula-test-support"
 version.workspace = true
 edition.workspace = true
-
-[[bin]]
-name = "nebula"
-path = "src/main.rs"
+publish = false
 
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
@@ -15,8 +12,3 @@ nebula-types = { path = "../nebula-types" }
 nebula-ir = { path = "../nebula-ir" }
 nebula-runtime = { path = "../nebula-runtime" }
 nebula-fmt = { path = "../nebula-fmt" }
-clap.workspace = true
-miette.workspace = true
-
-[dev-dependencies]
-nebula-test-support = { path = "../nebula-test-support" }

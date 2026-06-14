@@ -399,6 +399,7 @@ dependencies = [
  "nebula-load",
  "nebula-runtime",
  "nebula-syntax",
+ "nebula-test-support",
  "nebula-types",
 ]
 
@@ -408,6 +409,7 @@ version = "0.1.0"
 dependencies = [
  "nebula-ast",
  "nebula-syntax",
+ "nebula-test-support",
 ]
 
 [[package]]
@@ -455,6 +457,19 @@ dependencies = [
  "miette",
  "nebula-ast",
  "thiserror",
+]
+
+[[package]]
+name = "nebula-test-support"
+version = "0.1.0"
+dependencies = [
+ "nebula-ast",
+ "nebula-fmt",
+ "nebula-ir",
+ "nebula-load",
+ "nebula-runtime",
+ "nebula-syntax",
+ "nebula-types",
 ]
 
 [[package]]

@@ -6,3 +6,6 @@ edition.workspace = true
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
 nebula-syntax = { path = "../nebula-syntax" }
+
+[dev-dependencies]
+nebula-test-support = { path = "../nebula-test-support" }
