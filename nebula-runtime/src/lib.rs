@@ -1,3 +1,4 @@
+mod builtins;
 mod diagnostic_extract;
 mod probe;
 mod probe_manifest;
@@ -14,6 +15,7 @@ use nebula_ir::{IrExpr, IrProgram, IrStmt};
 use serde::Serialize;
 use thiserror::Error;
 
+pub use builtins::missing_runtime_handlers;
 pub use probe::{ProbeHost, ProbeInvocation, RegistryProbeHost};
 pub use probe_manifest::{
     list_probe_manifest, read_probe_manifest, validate_manifest, DeclaredProbe, McpServerReport,
@@ -194,6 +196,12 @@ impl Runtime {
         self
     }
 
+    /// Coverage hook used by sync tests to verify manifest builtins dispatch.
+    #[doc(hidden)]
+    pub fn eval_builtin_for_coverage(&mut self, name: &str) -> Result<Value, RuntimeError> {
+        self.eval_builtin(name, &[])
+    }
+
     pub fn run(&mut self, program: &IrProgram) -> Result<Value, RuntimeError> {
         let mut result = Value::None;
         for stmt in &program.mission.stmts {
@@ -311,7 +319,7 @@ impl Runtime {
             }
             IrExpr::Call { name, args } => {
                 if is_builtin(name) {
-                    return eval_builtin(name, args, self);
+                    return self.eval_builtin(name, args);
                 }
 
                 let resolved = self.resolve_function(name);
@@ -442,276 +450,6 @@ impl Runtime {
     }
 }
 
-/// Format an f64 the same way Python's `str(float)` does for the common cases:
-/// integral values keep a trailing `.0`, and non-finite values use lowercase
-/// `nan`/`inf`/`-inf`. Extreme magnitudes that Python renders in exponent form
-/// are the one documented divergence.
-fn format_float(n: f64) -> String {
-    if n.is_nan() {
-        return "nan".into();
-    }
-    if n.is_infinite() {
-        return if n < 0.0 { "-inf".into() } else { "inf".into() };
-    }
-    let s = format!("{n}");
-    if s.contains(['.', 'e', 'E']) {
-        s
-    } else {
-        format!("{s}.0")
-    }
-}
-
-fn eval_builtin(
-    name: &str,
-    args: &[IrExpr],
-    rt: &mut Runtime,
-) -> Result<Value, RuntimeError> {
-    match name {
-        "print" => {
-            if let Some(arg) = args.first() {
-                let v = rt.eval_expr(arg)?;
-                let line = value_to_string(&v)?;
-                if rt.capture_print {
-                    rt.printed.push(line);
-                } else {
-                    println!("{line}");
-                }
-            }
-            Ok(Value::None)
-        }
-        "len" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "len requires argument".into(),
-            })?)?;
-            match v {
-                Value::List(items) => Ok(Value::Int(items.len() as i64)),
-                Value::Map(map) => Ok(Value::Int(map.len() as i64)),
-                // Count Unicode scalar values, not bytes, to match the Python
-                // backend's `len()` (NEB string length is in code points).
-                Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
-                _ => Err(RuntimeError::Error {
-                    message: "len requires list, map, or string".into(),
-                }),
-            }
-        }
-        "push" => {
-            if args.len() != 2 {
-                return Err(RuntimeError::Error {
-                    message: "push requires exactly 2 arguments".into(),
-                });
-            }
-
-            let list_name = match args.first() {
-                Some(IrExpr::Var(name)) => name.clone(),
-                _ => {
-                    return Err(RuntimeError::Error {
-                        message: "push requires a list variable as first argument".into(),
-                    });
-                }
-            };
-
-            let value = rt.eval_expr(
-                args.get(1).ok_or(RuntimeError::Error {
-                    message: "push requires a value as second argument".into(),
-                })?,
-            )?;
-
-            match rt.env.get_mut(&list_name) {
-                Some(Value::List(items)) => {
-                    if let Some(existing) = items.first() {
-                        if !values_same_type(existing, &value) {
-                            return Err(RuntimeError::Error {
-                                message: format!(
-                                    "push value type mismatch for list `{list_name}`"
-                                ),
-                            });
-                        }
-                    }
-                    items.push(value);
-                    Ok(Value::None)
-                }
-                Some(_) => Err(RuntimeError::Error {
-                    message: format!("`{list_name}` is not a list"),
-                }),
-                None => Err(RuntimeError::UndefinedVar { name: list_name }),
-            }
-        }
-        "at" => {
-            if args.len() != 2 {
-                return Err(RuntimeError::Error {
-                    message: "at requires exactly 2 arguments".into(),
-                });
-            }
-            let list = rt.eval_expr(&args[0])?;
-            let index = match rt.eval_expr(&args[1])? {
-                Value::Int(i) => i,
-                _ => {
-                    return Err(RuntimeError::Error {
-                        message: "at index must be an Int".into(),
-                    })
-                }
-            };
-            match list {
-                Value::List(items) => {
-                    if index < 0 || index as usize >= items.len() {
-                        return Err(RuntimeError::IndexOutOfBounds {
-                            index,
-                            len: items.len(),
-                        });
-                    }
-                    Ok(items[index as usize].clone())
-                }
-                _ => Err(RuntimeError::Error {
-                    message: "at requires a list as first argument".into(),
-                }),
-            }
-        }
-        "get" => {
-            if args.len() != 2 {
-                return Err(RuntimeError::Error {
-                    message: "get requires exactly 2 arguments".into(),
-                });
-            }
-            let map = rt.eval_expr(&args[0])?;
-            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
-            match map {
-                Value::Map(entries) => entries
-                    .get(&key)
-                    .cloned()
-                    .ok_or(RuntimeError::KeyNotFound { key }),
-                _ => Err(RuntimeError::Error {
-                    message: "get requires a map as first argument".into(),
-                }),
-            }
-        }
-        "has" => {
-            if args.len() != 2 {
-                return Err(RuntimeError::Error {
-                    message: "has requires exactly 2 arguments".into(),
-                });
-            }
-            let map = rt.eval_expr(&args[0])?;
-            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
-            match map {
-                Value::Map(entries) => Ok(Value::Bool(entries.contains_key(&key))),
-                _ => Err(RuntimeError::Error {
-                    message: "has requires a map as first argument".into(),
-                }),
-            }
-        }
-        "insert" => {
-            if args.len() != 3 {
-                return Err(RuntimeError::Error {
-                    message: "insert requires exactly 3 arguments".into(),
-                });
-            }
-            // First argument must be a map variable so it is mutated in place,
-            // mirroring `push` on lists.
-            let map_name = match args.first() {
-                Some(IrExpr::Var(name)) => name.clone(),
-                _ => {
-                    return Err(RuntimeError::Error {
-                        message: "insert requires a map variable as first argument".into(),
-                    });
-                }
-            };
-            let key = value_to_string(&rt.eval_expr(&args[1])?)?;
-            let value = rt.eval_expr(&args[2])?;
-            match rt.env.get_mut(&map_name) {
-                Some(Value::Map(entries)) => {
-                    entries.insert(key, value);
-                    Ok(Value::None)
-                }
-                Some(_) => Err(RuntimeError::Error {
-                    message: format!("`{map_name}` is not a map"),
-                }),
-                None => Err(RuntimeError::UndefinedVar { name: map_name }),
-            }
-        }
-        "str_to_int" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "str_to_int requires argument".into(),
-            })?)?;
-            match v {
-                Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| RuntimeError::Error {
-                    message: format!("invalid int: {s}"),
-                }),
-                _ => Err(RuntimeError::Error {
-                    message: "str_to_int requires string".into(),
-                }),
-            }
-        }
-        "int_to_str" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "int_to_str requires argument".into(),
-            })?)?;
-            match v {
-                Value::Int(n) => Ok(Value::Str(n.to_string())),
-                _ => Err(RuntimeError::Error {
-                    message: "int_to_str requires int".into(),
-                }),
-            }
-        }
-        "float_to_str" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "float_to_str requires argument".into(),
-            })?)?;
-            match v {
-                Value::Float(n) => Ok(Value::Str(format_float(n))),
-                _ => Err(RuntimeError::Error {
-                    message: "float_to_str requires float".into(),
-                }),
-            }
-        }
-        "str_to_float" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "str_to_float requires argument".into(),
-            })?)?;
-            match v {
-                Value::Str(s) => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
-                    RuntimeError::Error {
-                        message: format!("invalid float: {s}"),
-                    }
-                }),
-                _ => Err(RuntimeError::Error {
-                    message: "str_to_float requires string".into(),
-                }),
-            }
-        }
-        "int_to_float" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "int_to_float requires argument".into(),
-            })?)?;
-            match v {
-                Value::Int(n) => Ok(Value::Float(n as f64)),
-                _ => Err(RuntimeError::Error {
-                    message: "int_to_float requires int".into(),
-                }),
-            }
-        }
-        "float_to_int" => {
-            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
-                message: "float_to_int requires argument".into(),
-            })?)?;
-            match v {
-                // Truncate toward zero, matching Python int(float).
-                Value::Float(n) => Ok(Value::Int(n.trunc() as i64)),
-                _ => Err(RuntimeError::Error {
-                    message: "float_to_int requires float".into(),
-                }),
-            }
-        }
-        _ if is_builtin(name) => Err(RuntimeError::Error {
-            message: format!(
-                "builtin `{name}` is listed in builtins.toml but has no runtime handler"
-            ),
-        }),
-        _ => Err(RuntimeError::Error {
-            message: format!("unknown builtin `{name}`"),
-        }),
-    }
-}
-
 fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
     match op {
         BinaryOp::Plus => match (l, r) {
@@ -825,21 +563,6 @@ fn is_truthy(v: &Value) -> bool {
     }
 }
 
-fn values_same_type(a: &Value, b: &Value) -> bool {
-    matches!(
-        (a, b),
-        (Value::Int(_), Value::Int(_))
-            | (Value::Float(_), Value::Float(_))
-            | (Value::Bool(_), Value::Bool(_))
-            | (Value::Str(_), Value::Str(_))
-            | (Value::None, Value::None)
-            | (Value::List(_), Value::List(_))
-            | (Value::Map(_), Value::Map(_))
-            | (Value::Some(_), Value::Some(_))
-            | (Value::Struct { .. }, Value::Struct { .. })
-    )
-}
-
 fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x == y,
@@ -881,7 +604,7 @@ fn value_to_string(v: &Value) -> Result<String, RuntimeError> {
         Value::Str(s) => Ok(s.clone()),
         Value::Int(n) => Ok(n.to_string()),
         Value::Bool(b) => Ok(b.to_string()),
-        Value::Float(n) => Ok(format_float(*n)),
+        Value::Float(n) => Ok(builtins::format_float(*n)),
         _ => Err(RuntimeError::Error {
             message: "cannot convert value to string".into(),
         }),
