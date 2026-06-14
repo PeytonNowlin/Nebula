@@ -2,8 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use nebula_fmt::format;
-use nebula_ir::lower;
-use nebula_load::load_program;
+use nebula_host::Host;
 use nebula_runtime::Runtime;
 use nebula_syntax::parse;
 use nebula_types::typecheck;
@@ -47,16 +46,16 @@ pub fn parse_and_typecheck(src: &str) -> nebula_types::TypedProgram {
 }
 
 pub fn compile_source(src: &str) -> nebula_ir::IrProgram {
-    let typed = parse_and_typecheck(src);
-    lower(&typed).expect("lower failed")
+    Host::new()
+        .try_compile_source(src, None)
+        .expect("compile source")
+        .ir
 }
 
 pub fn compile_file(path: &Path) -> nebula_ir::IrProgram {
-    let source = fs::read_to_string(path).expect("read file");
-    let program = parse(&source).expect("parse failed");
-    let loaded = load_program(path, program).expect("load failed");
-    let typed = typecheck(&loaded).expect("typecheck failed");
-    lower(&typed).expect("lower failed")
+    Host::new()
+        .try_lower_file(path)
+        .expect("compile file")
 }
 
 pub fn run_source(src: &str) {

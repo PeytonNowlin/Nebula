@@ -42,6 +42,24 @@ fn run_file_executes_imported_program() {
 }
 
 #[test]
+fn compile_file_resolves_imports_for_lower() {
+    let host = Host::new();
+    let ir = host
+        .try_lower_file(workspace_root().join("examples/import_demo.neb"))
+        .expect("lower import demo");
+    assert!(!ir.mission.stmts.is_empty());
+}
+
+#[test]
+fn format_file_loads_workspace_modules() {
+    let host = Host::new();
+    let result = host
+        .try_format_file(workspace_root().join("examples/hello.neb"), false)
+        .expect("format hello");
+    assert!(result.entry_display.unwrap().contains("mission main"));
+}
+
+#[test]
 fn host_config_is_reused_across_calls() {
     let host = Host::with_config(HostConfig {
         source_entry_label: Some("agent.neb".into()),

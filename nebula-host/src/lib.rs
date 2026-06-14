@@ -12,25 +12,25 @@
 //! assert_eq!(run.printed, vec!["hi"]);
 //! ```
 
-use std::fs;
-use std::path::{Path, PathBuf};
+mod pipeline;
 
-use miette::{IntoDiagnostic, Report};
+use std::path::Path;
+
+use miette::Report;
 use nebula_ast::Program;
 use nebula_diagnostics::diagnostics_from_report_with_source;
-use nebula_ir::lower;
-use nebula_load::load_workspace;
 use nebula_runtime::{list_probe_manifest, Runtime};
-use nebula_syntax::parse;
-use nebula_types::{report_with_source, typecheck};
+use nebula_types::TypedProgram;
 
 pub use nebula_ast::Program as AstProgram;
 pub use nebula_diagnostics::DiagnosticJson;
 pub use nebula_ir::IrProgram;
+pub use nebula_load::LoadedProgram;
 pub use nebula_runtime::Value as HostValue;
 pub use nebula_runtime::{DeclaredProbe, McpServerReport, ProbeListReport};
-
-const SOURCE_ENTRY: &str = "<source>";
+pub use pipeline::{
+    CompileArtifact, FormatResult, Pipeline, WorkspaceArtifact,
+};
 
 /// Reusable host session. Clone to share probe/telemetry configuration across calls.
 #[derive(Debug, Clone, Default)]
@@ -42,9 +42,9 @@ pub struct Host {
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
     /// When set, `check_file` / `run_file` load this probe manifest.
-    pub probe_manifest: Option<PathBuf>,
+    pub probe_manifest: Option<std::path::PathBuf>,
     /// When set, `run_*` writes telemetry JSONL to this path.
-    pub telemetry_path: Option<PathBuf>,
+    pub telemetry_path: Option<std::path::PathBuf>,
     /// Label used in diagnostics for [`Host::check_source`] / [`Host::run_source`].
     pub source_entry_label: Option<String>,
 }
@@ -70,12 +70,6 @@ pub struct RunOutput {
     pub return_value: Option<HostValue>,
 }
 
-struct CompiledSource {
-    entry: String,
-    source: String,
-    program: Program,
-}
-
 impl Host {
     pub fn new() -> Self {
         Self::default()
@@ -89,74 +83,90 @@ impl Host {
         &self.config
     }
 
-    pub fn check_source(&self, source: &str) -> CheckResult {
-        let entry = self
-            .config
-            .source_entry_label
-            .as_deref()
-            .unwrap_or(SOURCE_ENTRY);
-        match compile_source(source, entry) {
-            Ok(compiled) => match typecheck(&compiled.program) {
-                Ok(_) => CheckResult::ok(),
-                Err(errors) => CheckResult::fail(to_diagnostics(
-                    &compiled.entry,
-                    &compiled.source,
-                    report_with_source(&compiled.entry, &compiled.source, errors),
-                )),
-            },
-            Err(diagnostics) => CheckResult::fail(diagnostics),
-        }
+    /// Parse a file without resolving imports.
+    pub fn try_parse_file(&self, path: impl AsRef<Path>) -> miette::Result<Program> {
+        Ok(Pipeline::file(path.as_ref()).parse()?.program)
     }
 
-    pub fn check_file(&self, path: impl AsRef<Path>) -> CheckResult {
-        match self.try_check_file(path) {
-            Ok(()) => CheckResult::ok(),
-            Err(report) => CheckResult::fail(report_to_diagnostics(report)),
-        }
+    /// Parse and resolve imports for a workspace entry file.
+    pub fn try_load_file(&self, path: impl AsRef<Path>) -> miette::Result<LoadedProgram> {
+        Ok(Pipeline::file(path.as_ref()).workspace()?.loaded)
     }
 
-    /// Typecheck a file on disk, resolving imports. Returns miette reports for CLI display.
-    pub fn try_check_file(&self, path: impl AsRef<Path>) -> miette::Result<()> {
-        let compiled = compile_file_report(path.as_ref())?;
-        typecheck(&compiled.program).map_err(|errors| {
-            report_with_source(&compiled.entry, &compiled.source, errors)
-        })?;
-        Ok(())
+    /// Load and typecheck a workspace entry file.
+    pub fn try_typecheck_file(&self, path: impl AsRef<Path>) -> miette::Result<TypedProgram> {
+        Ok(Pipeline::file(path.as_ref()).typecheck()?.1)
     }
 
-    pub fn run_source(&self, source: &str) -> RunResult {
-        let entry = self
-            .config
-            .source_entry_label
-            .as_deref()
-            .unwrap_or(SOURCE_ENTRY);
-        match compile_and_lower_source(source, entry) {
-            Ok((compiled, ir)) => self.run_ir(&compiled.entry, &compiled.source, ir),
-            Err(diagnostics) => RunResult::fail(diagnostics),
-        }
-    }
-
-    pub fn run_file(&self, path: impl AsRef<Path>) -> RunResult {
-        match self.try_run_file(path) {
-            Ok(output) => RunResult {
-                ok: true,
-                diagnostics: Vec::new(),
-                printed: output.printed,
-                return_value: output.return_value,
-            },
-            Err(report) => RunResult::fail(report_to_diagnostics(report)),
-        }
-    }
-
-    /// Execute a file on disk, resolving imports. Returns miette reports for CLI display.
-    pub fn try_run_file(&self, path: impl AsRef<Path>) -> miette::Result<RunOutput> {
-        let (compiled, ir) = compile_and_lower_file_report(path.as_ref())?;
-        self.execute_ir(&compiled.entry, &compiled.source, ir)
+    /// Load, typecheck, and lower a workspace entry file.
+    pub fn try_compile_file(&self, path: impl AsRef<Path>) -> miette::Result<CompileArtifact> {
+        Pipeline::file(path.as_ref()).compile()
     }
 
     /// Lower a file on disk to IR, resolving imports.
     pub fn try_lower_file(&self, path: impl AsRef<Path>) -> miette::Result<IrProgram> {
-        compile_and_lower_file_report(path.as_ref()).map(|(_, ir)| ir)
+        Ok(self.try_compile_file(path)?.ir)
+    }
+
+    /// Parse, typecheck, and lower in-memory source (no import resolution).
+    pub fn try_compile_source(
+        &self,
+        source: &str,
+        entry_label: Option<&str>,
+    ) -> miette::Result<CompileArtifact> {
+        Pipeline::source(source, self.entry_label(entry_label)).compile()
+    }
+
+    /// Format a workspace entry file. When `write` is false, returns formatted entry text.
+    pub fn try_format_file(
+        &self,
+        path: impl AsRef<Path>,
+        write: bool,
+    ) -> miette::Result<FormatResult> {
+        Pipeline::format(write, path.as_ref())
+    }
+
+    /// Typecheck in-memory source. Returns structured diagnostics for agent loops.
+    pub fn check_source(&self, source: &str) -> CheckResult {
+        adapt_check(
+            Pipeline::source(source, self.entry_label(None))
+                .typecheck()
+                .map(|_| ()),
+        )
+    }
+
+    /// Typecheck a file on disk. Returns structured diagnostics for agent loops.
+    pub fn check_file(&self, path: impl AsRef<Path>) -> CheckResult {
+        adapt_check(self.try_check_file(path))
+    }
+
+    /// Typecheck a file on disk. Returns miette reports for CLI display.
+    pub fn try_check_file(&self, path: impl AsRef<Path>) -> miette::Result<()> {
+        Pipeline::file(path.as_ref())
+            .typecheck()
+            .map(|_| ())
+    }
+
+    /// Execute in-memory source. Returns structured output for agent loops.
+    pub fn run_source(&self, source: &str) -> RunResult {
+        adapt_run(self.try_run_source(source))
+    }
+
+    /// Execute a file on disk. Returns structured output for agent loops.
+    pub fn run_file(&self, path: impl AsRef<Path>) -> RunResult {
+        adapt_run(self.try_run_file(path))
+    }
+
+    /// Execute in-memory source. Returns miette reports for CLI display.
+    pub fn try_run_source(&self, source: &str) -> miette::Result<RunOutput> {
+        let compiled = self.try_compile_source(source, None)?;
+        self.execute_ir(compiled.ir)
+    }
+
+    /// Execute a file on disk, resolving imports. Returns miette reports for CLI display.
+    pub fn try_run_file(&self, path: impl AsRef<Path>) -> miette::Result<RunOutput> {
+        let compiled = self.try_compile_file(path)?;
+        self.execute_ir(compiled.ir)
     }
 
     /// List probe bindings from a manifest. Set `discover_mcp` to query live MCP servers via `tools/list`.
@@ -168,19 +178,13 @@ impl Host {
         list_probe_manifest(manifest.as_ref(), discover_mcp).map_err(Report::new)
     }
 
-    fn run_ir(&self, entry: &str, source: &str, ir: IrProgram) -> RunResult {
-        match self.execute_ir(entry, source, ir) {
-            Ok(output) => RunResult {
-                ok: true,
-                diagnostics: Vec::new(),
-                printed: output.printed,
-                return_value: output.return_value,
-            },
-            Err(report) => RunResult::fail(report_to_diagnostics(report)),
-        }
+    fn entry_label<'a>(&'a self, override_label: Option<&'a str>) -> &'a str {
+        override_label
+            .or(self.config.source_entry_label.as_deref())
+            .unwrap_or("<source>")
     }
 
-    fn execute_ir(&self, _entry: &str, _source: &str, ir: IrProgram) -> miette::Result<RunOutput> {
+    fn execute_ir(&self, ir: IrProgram) -> miette::Result<RunOutput> {
         let mut runtime = Runtime::new(&ir).with_capture_print(true);
         if let Some(manifest) = &self.config.probe_manifest {
             runtime = runtime
@@ -216,7 +220,11 @@ impl CheckResult {
 }
 
 impl RunResult {
-    pub fn fail(diagnostics: Vec<DiagnosticJson>) -> Self {
+    pub fn fail(diagnostics: Vec<DiagnosticJson>) -> Vec<DiagnosticJson> {
+        diagnostics
+    }
+
+    pub fn from_err(diagnostics: Vec<DiagnosticJson>) -> Self {
         Self {
             ok: false,
             diagnostics,
@@ -226,71 +234,25 @@ impl RunResult {
     }
 }
 
-fn compile_source(source: &str, entry: &str) -> Result<CompiledSource, Vec<DiagnosticJson>> {
-    let program = parse(source).map_err(|err| {
-        to_diagnostics(entry, source, report_with_source(entry, source, err))
-    })?;
-    Ok(CompiledSource {
-        entry: entry.to_string(),
-        source: source.to_string(),
-        program,
-    })
+fn adapt_check(result: Result<impl Sized, Report>) -> CheckResult {
+    match result {
+        Ok(()) => CheckResult::ok(),
+        Err(report) => CheckResult::fail(diagnostics_from_report(&report)),
+    }
 }
 
-fn compile_file_report(path: &Path) -> miette::Result<CompiledSource> {
-    let source = fs::read_to_string(path).into_diagnostic()?;
-    let entry = path.display().to_string();
-    let program =
-        parse(&source).map_err(|err| report_with_source(path, &source, err))?;
-    let loaded =
-        load_workspace(path, program).map_err(|err| report_with_source(path, &source, err))?;
-    Ok(CompiledSource {
-        entry,
-        source,
-        program: loaded.merged,
-    })
+fn adapt_run(result: Result<RunOutput, Report>) -> RunResult {
+    match result {
+        Ok(output) => RunResult {
+            ok: true,
+            diagnostics: Vec::new(),
+            printed: output.printed,
+            return_value: output.return_value,
+        },
+        Err(report) => RunResult::from_err(diagnostics_from_report(&report)),
+    }
 }
 
-fn compile_and_lower_source(
-    source: &str,
-    entry: &str,
-) -> Result<(CompiledSource, IrProgram), Vec<DiagnosticJson>> {
-    let compiled = compile_source(source, entry)?;
-    let typed = typecheck(&compiled.program).map_err(|errors| {
-        to_diagnostics(
-            &compiled.entry,
-            &compiled.source,
-            report_with_source(&compiled.entry, &compiled.source, errors),
-        )
-    })?;
-    let ir = lower(&typed).map_err(|err| {
-        to_diagnostics(
-            &compiled.entry,
-            &compiled.source,
-            Report::new(err),
-        )
-    })?;
-    Ok((compiled, ir))
-}
-
-fn compile_and_lower_file_report(path: &Path) -> miette::Result<(CompiledSource, IrProgram)> {
-    let compiled = compile_file_report(path)?;
-    let typed = typecheck(&compiled.program).map_err(|errors| {
-        report_with_source(&compiled.entry, &compiled.source, errors)
-    })?;
-    let ir = lower(&typed).map_err(Report::new)?;
-    Ok((compiled, ir))
-}
-
-fn to_diagnostics(_entry: impl AsRef<str>, source: &str, report: Report) -> Vec<DiagnosticJson> {
-    let fallback = if source.is_empty() {
-        None
-    } else {
-        Some(source)
-    };
-    diagnostics_from_report_with_source(&report, fallback)
-}
-
-fn report_to_diagnostics(report: Report) -> Vec<DiagnosticJson> {
-    diagnostics_from_report_with_source(&report, None)
+fn diagnostics_from_report(report: &Report) -> Vec<DiagnosticJson> {
+    diagnostics_from_report_with_source(report, None)
 }

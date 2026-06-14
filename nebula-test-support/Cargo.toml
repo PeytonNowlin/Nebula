@@ -5,10 +5,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-nebula-ast = { path = "../nebula-ast" }
-nebula-syntax = { path = "../nebula-syntax" }
-nebula-load = { path = "../nebula-load" }
-nebula-types = { path = "../nebula-types" }
+nebula-host = { path = "../nebula-host" }
 nebula-ir = { path = "../nebula-ir" }
 nebula-runtime = { path = "../nebula-runtime" }
 nebula-fmt = { path = "../nebula-fmt" }
+nebula-syntax = { path = "../nebula-syntax" }
+nebula-types = { path = "../nebula-types" }
