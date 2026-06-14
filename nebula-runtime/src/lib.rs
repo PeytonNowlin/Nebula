@@ -47,6 +47,10 @@ pub enum RuntimeError {
     #[diagnostic(code(nebula::probe_failed))]
     ProbeFailed { name: String, message: String },
 
+    #[error("NEB-P004 [probe_error] MCP transport error: {message}")]
+    #[diagnostic(code(nebula::mcp_transport))]
+    McpTransport { message: String },
+
     #[error("NEB-R003 [runtime_error] undefined variable `{name}`")]
     #[diagnostic(code(nebula::undefined_var))]
     UndefinedVar { name: String },
@@ -359,8 +363,35 @@ impl Runtime {
 fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "print" | "len" | "push" | "str_to_int" | "int_to_str"
+        "print"
+            | "len"
+            | "push"
+            | "str_to_int"
+            | "int_to_str"
+            | "str_to_float"
+            | "float_to_str"
+            | "int_to_float"
+            | "float_to_int"
     )
+}
+
+/// Format an f64 the same way Python's `str(float)` does for the common cases:
+/// integral values keep a trailing `.0`, and non-finite values use lowercase
+/// `nan`/`inf`/`-inf`. Extreme magnitudes that Python renders in exponent form
+/// are the one documented divergence.
+fn format_float(n: f64) -> String {
+    if n.is_nan() {
+        return "nan".into();
+    }
+    if n.is_infinite() {
+        return if n < 0.0 { "-inf".into() } else { "inf".into() };
+    }
+    let s = format!("{n}");
+    if s.contains(['.', 'e', 'E']) {
+        s
+    } else {
+        format!("{s}.0")
+    }
 }
 
 fn eval_builtin(
@@ -382,7 +413,9 @@ fn eval_builtin(
             })?)?;
             match v {
                 Value::List(items) => Ok(Value::Int(items.len() as i64)),
-                Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+                // Count Unicode scalar values, not bytes, to match the Python
+                // backend's `len()` (NEB string length is in code points).
+                Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
                 _ => Err(RuntimeError::Error {
                     message: "len requires list or string".into(),
                 }),
@@ -454,6 +487,55 @@ fn eval_builtin(
                 }),
             }
         }
+        "float_to_str" => {
+            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
+                message: "float_to_str requires argument".into(),
+            })?)?;
+            match v {
+                Value::Float(n) => Ok(Value::Str(format_float(n))),
+                _ => Err(RuntimeError::Error {
+                    message: "float_to_str requires float".into(),
+                }),
+            }
+        }
+        "str_to_float" => {
+            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
+                message: "str_to_float requires argument".into(),
+            })?)?;
+            match v {
+                Value::Str(s) => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+                    RuntimeError::Error {
+                        message: format!("invalid float: {s}"),
+                    }
+                }),
+                _ => Err(RuntimeError::Error {
+                    message: "str_to_float requires string".into(),
+                }),
+            }
+        }
+        "int_to_float" => {
+            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
+                message: "int_to_float requires argument".into(),
+            })?)?;
+            match v {
+                Value::Int(n) => Ok(Value::Float(n as f64)),
+                _ => Err(RuntimeError::Error {
+                    message: "int_to_float requires int".into(),
+                }),
+            }
+        }
+        "float_to_int" => {
+            let v = rt.eval_expr(args.first().ok_or(RuntimeError::Error {
+                message: "float_to_int requires argument".into(),
+            })?)?;
+            match v {
+                // Truncate toward zero, matching Python int(float).
+                Value::Float(n) => Ok(Value::Int(n.trunc() as i64)),
+                _ => Err(RuntimeError::Error {
+                    message: "float_to_int requires float".into(),
+                }),
+            }
+        }
         _ => Err(RuntimeError::Error {
             message: format!("unknown builtin `{name}`"),
         }),
@@ -464,6 +546,7 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
     match op {
         BinaryOp::Plus => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Str(mut a), Value::Str(b)) => {
                 a.push_str(&b);
                 Ok(Value::Str(a))
@@ -474,19 +557,25 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
         },
         BinaryOp::Minus => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid minus operands".into(),
             }),
         },
         BinaryOp::Times => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid times operands".into(),
             }),
         },
         BinaryOp::Div => match (l, r) {
             (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
+            // Integer div truncates toward zero (C-style); the Python backend
+            // mirrors this in `nebula_div`.
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid div operands".into(),
             }),
@@ -494,6 +583,9 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
         BinaryOp::Mod => match (l, r) {
             (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
+            // f64 `%` keeps the sign of the dividend, matching Python math.fmod.
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid mod operands".into(),
             }),
@@ -502,24 +594,28 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
         BinaryOp::Ne => Ok(Value::Bool(!values_equal(&l, &r))),
         BinaryOp::Lt => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid lt operands".into(),
             }),
         },
         BinaryOp::Gt => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid gt operands".into(),
             }),
         },
         BinaryOp::Le => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid le operands".into(),
             }),
         },
         BinaryOp::Ge => match (l, r) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid ge operands".into(),
             }),
@@ -562,6 +658,31 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::None, Value::None) => true,
+        (Value::Some(x), Value::Some(y)) => values_equal(x, y),
+        (Value::List(x), Value::List(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(l, r)| values_equal(l, r))
+        }
+        (Value::Map(x), Value::Map(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| values_equal(v, w)))
+        }
+        (
+            Value::Struct {
+                name: n1,
+                fields: f1,
+            },
+            Value::Struct {
+                name: n2,
+                fields: f2,
+            },
+        ) => {
+            n1 == n2
+                && f1.len() == f2.len()
+                && f1
+                    .iter()
+                    .all(|(k, v)| f2.get(k).is_some_and(|w| values_equal(v, w)))
+        }
         _ => false,
     }
 }
@@ -571,7 +692,7 @@ fn value_to_string(v: &Value) -> Result<String, RuntimeError> {
         Value::Str(s) => Ok(s.clone()),
         Value::Int(n) => Ok(n.to_string()),
         Value::Bool(b) => Ok(b.to_string()),
-        Value::Float(n) => Ok(n.to_string()),
+        Value::Float(n) => Ok(format_float(*n)),
         _ => Err(RuntimeError::Error {
             message: "cannot convert value to string".into(),
         }),

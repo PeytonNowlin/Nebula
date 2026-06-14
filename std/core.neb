@@ -1,2 +1,14 @@
 -- Nebula standard library: core builtins
--- Provided by the runtime: print, len, push, str_to_int, int_to_str
+-- Provided by the runtime (no import needed):
+--   print(value: Str) -> Void
+--   len(value: List<T> or Str) -> Int        -- string length is in code points
+--   push(list: List<T>, value: T) -> Void    -- first arg must be a list variable
+--   str_to_int(s: Str) -> Int
+--   int_to_str(n: Int) -> Str
+--   str_to_float(s: Str) -> Float
+--   float_to_str(f: Float) -> Str
+--   int_to_float(n: Int) -> Float
+--   float_to_int(f: Float) -> Int             -- truncates toward zero
+--
+-- Numeric ops require matching operand types (both Int or both Float); there is
+-- no implicit Int/Float coercion. Integer div/mod truncate toward zero.

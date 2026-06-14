@@ -12,7 +12,17 @@ use crate::layout::{
     sorted_modules,
 };
 
-const BUILTINS: &[&str] = &["print", "len", "push", "str_to_int", "int_to_str"];
+const BUILTINS: &[&str] = &[
+    "print",
+    "len",
+    "push",
+    "str_to_int",
+    "int_to_str",
+    "str_to_float",
+    "float_to_str",
+    "int_to_float",
+    "float_to_int",
+];
 
 pub struct EmitOptions {
     pub out_dir: PathBuf,
@@ -184,17 +194,7 @@ impl<'a> ModuleEmitter<'a> {
         self.write_line("sys.path.insert(0, str(_NEBULA_ROOT))");
         self.indent = 0;
         self.write_line("");
-        self.write_line("from nebula_runtime.builtins import (");
-        self.indent = 1;
-        self.write_line("nebula_div,");
-        self.write_line("nebula_int_to_str,");
-        self.write_line("nebula_len,");
-        self.write_line("nebula_mod,");
-        self.write_line("nebula_print,");
-        self.write_line("nebula_push,");
-        self.write_line("nebula_str_to_int,");
-        self.indent = 0;
-        self.write_line(")");
+        self.write_line("from nebula_runtime.builtins import *  # noqa: F401,F403");
         self.write_line("from nebula_runtime.probes import RegistryProbeHost");
         self.write_line("from nebula_runtime.runtime import (");
         self.indent = 1;
@@ -442,7 +442,7 @@ impl<'a> ModuleEmitter<'a> {
     fn emit_expr(&self, expr: &IrExpr) -> Result<String, EmitError> {
         Ok(match expr {
             IrExpr::Int(n) => n.to_string(),
-            IrExpr::Float(n) => n.to_string(),
+            IrExpr::Float(n) => python_float(*n),
             IrExpr::Str(s) => python_string(s),
             IrExpr::Bool(b) => if *b { "True" } else { "False" }.to_string(),
             IrExpr::None => "None".to_string(),
@@ -476,14 +476,8 @@ impl<'a> ModuleEmitter<'a> {
                     args.iter().map(|arg| self.emit_expr(arg)).collect();
                 let rendered_args = rendered_args?;
                 if is_builtin(name) {
-                    match name.as_str() {
-                        "print" => format!("nebula_print({})", rendered_args.join(", ")),
-                        "len" => format!("nebula_len({})", rendered_args.join(", ")),
-                        "push" => format!("nebula_push({})", rendered_args.join(", ")),
-                        "str_to_int" => format!("nebula_str_to_int({})", rendered_args.join(", ")),
-                        "int_to_str" => format!("nebula_int_to_str({})", rendered_args.join(", ")),
-                        _ => unreachable!(),
-                    }
+                    // Builtins map 1:1 to `nebula_<name>` functions in the shim.
+                    format!("nebula_{name}({})", rendered_args.join(", "))
                 } else {
                     format!("{callee}({})", rendered_args.join(", "))
                 }
@@ -572,6 +566,28 @@ fn emit_module(
 
 fn is_builtin(name: &str) -> bool {
     BUILTINS.contains(&name)
+}
+
+/// Render a float literal so Python parses it as a `float`, never an `int`.
+/// `7.0_f64.to_string()` is `"7"`, which would become a Python int and corrupt
+/// downstream numeric ops (e.g. `div` would truncate).
+fn python_float(n: f64) -> String {
+    if n.is_nan() {
+        return "float('nan')".to_string();
+    }
+    if n.is_infinite() {
+        return if n < 0.0 {
+            "float('-inf')".to_string()
+        } else {
+            "float('inf')".to_string()
+        };
+    }
+    let s = format!("{n}");
+    if s.contains(['.', 'e', 'E']) {
+        s
+    } else {
+        format!("{s}.0")
+    }
 }
 
 fn python_string(value: &str) -> String {

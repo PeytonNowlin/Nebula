@@ -8,7 +8,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 
 - **Keyword-based syntax** — arithmetic and comparisons use words instead of symbols, so parsers and agents can read source without ambiguity.
 - **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
-- **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (structured JSONL `log` handler by default, external commands via `--probes` manifest).
+- **Probes** — declare external capabilities in source; `call` dispatches them through a probe host (`jsonl`, external `command`, or **MCP** via `--probes` manifest).
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
 - **Imports** — compose programs from library modules with cycle and duplicate detection (`NEB-L003`, `NEB-T009`).
 - **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
@@ -17,6 +17,7 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 ## Requirements
 
 - [Rust](https://www.rust-lang.org/) (2021 edition; any recent stable toolchain)
+- [Python 3](https://www.python.org/) (required for MCP probe servers, transpiled output, and integration tests)
 
 ## Quick start
 
@@ -127,6 +128,14 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 | `push` | `fn(list: List<T>, value: T) -> Void` | Mutates a **list variable** in place; first arg must be an identifier |
 | `str_to_int` | `fn(s: Str) -> Int` | |
 | `int_to_str` | `fn(n: Int) -> Str` | |
+| `str_to_float` | `fn(s: Str) -> Float` | |
+| `float_to_str` | `fn(f: Float) -> Str` | |
+| `int_to_float` | `fn(n: Int) -> Float` | Explicit widening (no implicit coercion) |
+| `float_to_int` | `fn(f: Float) -> Int` | Truncates toward zero |
+
+### Numeric semantics
+
+Arithmetic and ordering require **both operands to share a numeric type** — both `Int` or both `Float`. There is no implicit coercion; convert with `int_to_float` / `float_to_int`. Integer `div`/`mod` truncate toward zero (the remainder's sign follows the dividend). `eq`/`ne` compare deeply, including lists, maps, options, and structs. `len` on a string counts Unicode code points. The interpreter and the Python backend produce identical results for all of these (enforced by the parity test suite).
 
 ### `return` and `emit`
 
@@ -134,20 +143,51 @@ Both exit the current function with a value. `return` is the conventional form; 
 
 ### Probes and telemetry
 
-Probes declare capabilities the host is expected to provide. `call` invokes them through the probe host:
+Probes declare capabilities the host is expected to provide. `call` invokes them through the probe host configured with `--probes <manifest.json>`:
 
-- **`log`** — built-in handler writes structured JSONL (`{"ts", "probe", "args"}`) to stderr
-- **Custom probes** — map probe names to external commands in a JSON manifest (`--probes probes/host.json`)
+| Handler kind | Description |
+|--------------|-------------|
+| `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
+| `command` | External process with Nebula's stdin/stdout JSON protocol |
+| `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
 
-Command probes use a stdin/stdout JSON protocol:
+**Command probes** use a stdin/stdout JSON protocol:
 
 ```json
-// request (stdin)
 {"probe":"notify","args":{"channel":"ops","message":"ready"}}
-
-// response (stdout)
 {"status":"ok"}
 ```
+
+**MCP probes** map declared probes to MCP `tools/call` on servers defined in the manifest:
+
+```json
+{
+  "mcp_servers": {
+    "local": {
+      "transport": "stdio",
+      "command": ["python3", "scripts/mcp_mock_stdio.py"]
+    },
+    "remote": {
+      "transport": "http",
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  },
+  "probes": {
+    "log": { "kind": "jsonl" },
+    "notify": {
+      "kind": "mcp",
+      "server": "local",
+      "tool": "notify"
+    }
+  }
+}
+```
+
+- One live MCP connection is reused per `mcp_servers` entry (not per `call`).
+- `tool` defaults to the probe's short name if omitted.
+- MCP transport failures report `NEB-P004`; tool execution errors report `NEB-P003`.
+
+Example manifests: [`probes/host.json`](probes/host.json), [`probes/mcp_stdio.json`](probes/mcp_stdio.json). Mock MCP servers for tests: [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py), [`scripts/mcp_mock_http.py`](scripts/mcp_mock_http.py).
 
 ```nebula
 mission main {
@@ -157,6 +197,12 @@ mission main {
     call log(level: "info", message: "starting");
   end
 }
+```
+
+Run with MCP probes:
+
+```bash
+cargo run -- run examples/agent_counter.neb --probes probes/mcp_stdio.json
 ```
 
 With `--telemetry`, each statement inside a `telemetry` block appends a JSONL event describing the step.
@@ -181,6 +227,7 @@ Import paths are relative to the importing file. Library modules may contain sec
 | `NEB-T` | Type |
 | `NEB-R` | Runtime |
 | `NEB-P` | Probe |
+| `NEB-P004` | MCP transport / protocol failure |
 | `NEB-L` | Module load / import |
 
 Type checking reports multiple errors at once with source spans (`NEB-T002`, `NEB-T009`, etc.) rather than stopping at the first failure.
@@ -207,7 +254,8 @@ Rust workspace crates, each handling one stage of the pipeline:
 | `nebula-load` | Import resolution and program merging |
 | `nebula-types` | Type checker |
 | `nebula-ir` | Intermediate representation lowering |
-| `nebula-runtime` | Tree-walking interpreter |
+| `nebula-runtime` | Tree-walking interpreter and probe host |
+| `nebula-mcp` | MCP client (stdio + HTTP) for probe transport |
 | `nebula-fmt` | Canonical formatter |
 | `nebula-cli` | `nebula` command-line tool |
 | `nebula-python` | IR → Python transpiler and `nebula_runtime` shim bundler |
@@ -215,7 +263,7 @@ Rust workspace crates, each handling one stage of the pipeline:
 
 The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). The GBNF grammar for constrained generation is at [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
 
-[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`). Probe host configuration examples live in [`probes/host.json`](probes/host.json); see [`scripts/probe_ok.py`](scripts/probe_ok.py) for a minimal external command handler.
+[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`). Probe host configuration examples live in [`probes/host.json`](probes/host.json) and [`probes/mcp_stdio.json`](probes/mcp_stdio.json); see [`scripts/probe_ok.py`](scripts/probe_ok.py) for a minimal command handler and [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py) for a mock MCP server.
 
 ## Python transpilation
 
@@ -229,7 +277,6 @@ The entry module includes `if __name__ == "__main__"` calling `run_main(main)`.
 
 ## Roadmap (not yet implemented)
 
-- MCP probe transport (command probe protocol is the current integration point)
 - Loadable stdlib beyond importable `.neb` modules
 
 ## Development

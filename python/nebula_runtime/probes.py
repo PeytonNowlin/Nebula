@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from nebula_runtime.mcp_client import McpConnectionManager, NebulaMcpError
+
 
 class NebulaProbeError(Exception):
     pass
@@ -15,10 +17,26 @@ class RegistryProbeHost:
         self.handlers: Dict[str, Dict[str, Any]] = {
             "log": {"kind": "jsonl", "path": None},
         }
+        self._mcp_servers: Dict[str, Dict[str, Any]] = {}
+        self._mcp_manager: Optional[McpConnectionManager] = None
 
     def load_manifest(self, path: str) -> None:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self._mcp_servers = data.get("mcp_servers", {})
+        self._mcp_manager = (
+            McpConnectionManager(self._mcp_servers) if self._mcp_servers else None
+        )
         for name, binding in data.get("probes", {}).items():
+            if binding.get("kind") == "mcp":
+                server = binding.get("server")
+                if not server:
+                    raise NebulaProbeError(
+                        f"probe `{name}` uses kind mcp but has no server"
+                    )
+                if self._mcp_manager is None or server not in self._mcp_servers:
+                    raise NebulaProbeError(
+                        f"probe `{name}` references unknown MCP server `{server}`"
+                    )
             self.handlers[name] = binding
 
     def handler_for(self, name: str) -> Optional[Dict[str, Any]]:
@@ -26,6 +44,12 @@ class RegistryProbeHost:
             return self.handlers[name]
         short = name.rsplit(".", 1)[-1]
         return self.handlers.get(short)
+
+    @staticmethod
+    def _resolve_tool_name(probe_name: str, tool: Optional[str]) -> str:
+        if tool:
+            return tool
+        return probe_name.rsplit(".", 1)[-1]
 
     def call(self, name: str, args: Dict[str, Any]) -> Any:
         handler = self.handler_for(name)
@@ -38,7 +62,23 @@ class RegistryProbeHost:
             return self._invoke_jsonl(name, args, handler.get("path"))
         if kind == "command":
             return self._invoke_command(name, args, handler.get("command", []))
+        if kind == "mcp":
+            if self._mcp_manager is None:
+                raise NebulaProbeError(
+                    f"probe `{name}` is configured as MCP but no MCP servers are loaded"
+                )
+            tool = self._resolve_tool_name(name, handler.get("tool"))
+            try:
+                self._mcp_manager.call_tool(handler["server"], tool, args)
+            except NebulaMcpError as err:
+                raise NebulaProbeError(str(err)) from err
+            return None
         raise NebulaProbeError(f"unknown probe handler kind for `{name}`")
+
+    def close(self) -> None:
+        if self._mcp_manager is not None:
+            self._mcp_manager.close()
+            self._mcp_manager = None
 
     def _invoke_jsonl(self, name: str, args: Dict[str, Any], path: Optional[str]) -> Any:
         event = {

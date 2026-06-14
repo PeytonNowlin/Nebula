@@ -1,0 +1,18 @@
+{
+  "mcp_servers": {
+    "local": {
+      "transport": "stdio",
+      "command": ["python3", "scripts/mcp_mock_stdio.py"]
+    }
+  },
+  "probes": {
+    "log": {
+      "kind": "jsonl"
+    },
+    "notify": {
+      "kind": "mcp",
+      "server": "local",
+      "tool": "notify"
+    }
+  }
+}

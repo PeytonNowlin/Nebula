@@ -41,3 +41,5 @@ def run_main(main: Callable[[], Any], probe_manifest: Optional[str] = None, tele
     except Exception as err:
         print(str(err), file=sys.stderr)
         raise SystemExit(1) from err
+    finally:
+        PROBE_HOST.close()

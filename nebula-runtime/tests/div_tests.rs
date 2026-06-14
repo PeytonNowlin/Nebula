@@ -38,3 +38,29 @@ mission main {
     assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
     assert!(err.contains("division by zero"), "expected clear message, got: {err}");
 }
+
+#[test]
+fn float_div_by_zero_reports_neb_r004() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let x: Float = 1.0 div 0.0;
+  print(float_to_str(x));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
+}
+
+#[test]
+fn float_mod_by_zero_reports_neb_r004() {
+    let err = run_expect_err(
+        r#"
+mission main {
+  let x: Float = 1.0 mod 0.0;
+  print(float_to_str(x));
+}
+"#,
+    );
+    assert!(err.contains("NEB-R004"), "expected divide-by-zero code, got: {err}");
+}

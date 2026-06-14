@@ -171,6 +171,10 @@ impl Checker {
             ("print", vec![("value".into(), Type::Str)], Type::Void),
             ("str_to_int", vec![("s".into(), Type::Str)], Type::Int),
             ("int_to_str", vec![("n".into(), Type::Int)], Type::Str),
+            ("str_to_float", vec![("s".into(), Type::Str)], Type::Float),
+            ("float_to_str", vec![("f".into(), Type::Float)], Type::Str),
+            ("int_to_float", vec![("n".into(), Type::Int)], Type::Float),
+            ("float_to_int", vec![("f".into(), Type::Float)], Type::Int),
         ] {
             functions.insert(
                 name.into(),
@@ -753,9 +757,11 @@ impl Checker {
                             Type::Str
                         } else if lty == Type::Int && rty == Type::Int {
                             Type::Int
+                        } else if lty == Type::Float && rty == Type::Float {
+                            Type::Float
                         } else {
                             errors.push(TypeError::Mismatch {
-                                expected: "Int or Str operands (matching types)".into(),
+                                expected: "matching Int, Float, or Str operands".into(),
                                 found: format!("{} and {}", lty.display(), rty.display()),
                                 span: left.span.clone(),
                             });
@@ -763,14 +769,18 @@ impl Checker {
                         }
                     }
                     BinaryOp::Minus | BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => {
-                        if lty != Type::Int || rty != Type::Int {
+                        if lty == Type::Int && rty == Type::Int {
+                            Type::Int
+                        } else if lty == Type::Float && rty == Type::Float {
+                            Type::Float
+                        } else {
                             errors.push(TypeError::Mismatch {
-                                expected: "Int operands".into(),
+                                expected: "matching Int or Float operands".into(),
                                 found: format!("{} and {}", lty.display(), rty.display()),
                                 span: left.span.clone(),
                             });
+                            Type::Int
                         }
-                        Type::Int
                     }
                     BinaryOp::Eq | BinaryOp::Ne => {
                         if !types_equal(&lty, &rty) {
@@ -783,9 +793,11 @@ impl Checker {
                         Type::Bool
                     }
                     BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge => {
-                        if lty != Type::Int || rty != Type::Int {
+                        let ordered = (lty == Type::Int && rty == Type::Int)
+                            || (lty == Type::Float && rty == Type::Float);
+                        if !ordered {
                             errors.push(TypeError::Mismatch {
-                                expected: "Int operands".into(),
+                                expected: "matching Int or Float operands".into(),
                                 found: format!("{} and {}", lty.display(), rty.display()),
                                 span: left.span.clone(),
                             });
@@ -870,9 +882,34 @@ impl Checker {
                     }
                     return Type::Map(Box::new(Type::Str), Box::new(Type::Int));
                 }
-                let key_ty = self.check_expr_inner(&entries[0].node.key.node, scope, errors, None);
+                let (key_expected, val_expected) = match expected {
+                    Some(Type::Map(k, v)) => (Some(k.as_ref()), Some(v.as_ref())),
+                    _ => (None, None),
+                };
+                let key_ty =
+                    self.check_expr_inner(&entries[0].node.key.node, scope, errors, key_expected);
                 let val_ty =
-                    self.check_expr_inner(&entries[0].node.value.node, scope, errors, None);
+                    self.check_expr_inner(&entries[0].node.value.node, scope, errors, val_expected);
+                // Every entry must agree with the first entry's key/value types.
+                for entry in &entries[1..] {
+                    let k = self.check_expr_inner(&entry.node.key.node, scope, errors, Some(&key_ty));
+                    if !types_equal(&key_ty, &k) {
+                        errors.push(TypeError::Mismatch {
+                            expected: key_ty.display(),
+                            found: k.display(),
+                            span: entry.node.key.span.clone(),
+                        });
+                    }
+                    let v =
+                        self.check_expr_inner(&entry.node.value.node, scope, errors, Some(&val_ty));
+                    if !types_equal(&val_ty, &v) {
+                        errors.push(TypeError::Mismatch {
+                            expected: val_ty.display(),
+                            found: v.display(),
+                            span: entry.node.value.span.clone(),
+                        });
+                    }
+                }
                 Type::Map(Box::new(key_ty), Box::new(val_ty))
             }
             Expr::StructLit { name, fields } => {

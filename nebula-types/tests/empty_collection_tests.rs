@@ -44,6 +44,66 @@ mission main {
 }
 
 #[test]
+fn map_literal_rejects_mismatched_value_type() {
+    let src = r#"
+mission main {
+  let m: Map<Int, Str> = {1: "a", 2: 3};
+  print("ok");
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(
+        typecheck(&program).is_err(),
+        "map literal with a mismatched value type should fail to typecheck"
+    );
+}
+
+#[test]
+fn map_literal_rejects_mismatched_key_type() {
+    let src = r#"
+mission main {
+  let m: Map<Int, Str> = {1: "a", "two": "b"};
+  print("ok");
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(
+        typecheck(&program).is_err(),
+        "map literal with a mismatched key type should fail to typecheck"
+    );
+}
+
+#[test]
+fn float_arithmetic_typechecks() {
+    let src = r#"
+mission main {
+  let x: Float = 1.5;
+  let y: Float = 2.5;
+  let z: Float = x plus y;
+  print(float_to_str(z div 2.0));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("float arithmetic should typecheck");
+}
+
+#[test]
+fn mixed_int_float_arithmetic_rejected() {
+    let src = r#"
+mission main {
+  let x: Float = 1.5;
+  let z: Float = x plus 2;
+  print(float_to_str(z));
+}
+"#;
+    let program = parse(src).expect("parse");
+    assert!(
+        typecheck(&program).is_err(),
+        "mixing Int and Float operands should fail (no implicit coercion)"
+    );
+}
+
+#[test]
 fn empty_list_defaults_without_context() {
     let src = r#"
 sector math {

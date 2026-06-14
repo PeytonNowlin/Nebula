@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use nebula_mcp::{McpConnectionManager, McpError, McpServerConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::{RuntimeError, Value};
@@ -29,6 +30,8 @@ struct ProbeEvent {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ProbeManifest {
+    #[serde(default)]
+    mcp_servers: HashMap<String, McpServerConfig>,
     probes: HashMap<String, ProbeBinding>,
 }
 
@@ -42,18 +45,27 @@ enum ProbeBinding {
     Command {
         command: Vec<String>,
     },
+    Mcp {
+        server: String,
+        #[serde(default)]
+        tool: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
 enum Handler {
     Jsonl { path: Option<PathBuf> },
     Command { command: Vec<String> },
+    Mcp {
+        server: String,
+        tool: Option<String>,
+    },
 }
 
 /// Default probe host: built-in handlers plus optional manifest overrides.
-#[derive(Debug, Clone)]
 pub struct RegistryProbeHost {
     handlers: HashMap<String, Handler>,
+    mcp_manager: Option<McpConnectionManager>,
 }
 
 impl RegistryProbeHost {
@@ -65,7 +77,10 @@ impl RegistryProbeHost {
                 path: None,
             },
         );
-        Self { handlers }
+        Self {
+            handlers,
+            mcp_manager: None,
+        }
     }
 
     pub fn load_manifest(&mut self, path: &Path) -> Result<(), RuntimeError> {
@@ -77,7 +92,33 @@ impl RegistryProbeHost {
                 message: format!("invalid probe manifest `{}`: {err}", path.display()),
             }
         })?;
+
+        if !manifest.mcp_servers.is_empty() {
+            self.mcp_manager = Some(
+                McpConnectionManager::new(manifest.mcp_servers.clone())
+                    .map_err(mcp_error_to_runtime)?,
+            );
+        } else {
+            self.mcp_manager = None;
+        }
+
         for (name, binding) in manifest.probes {
+            if let ProbeBinding::Mcp { server, .. } = &binding {
+                if self.mcp_manager.is_none() {
+                    return Err(RuntimeError::Error {
+                        message: format!(
+                            "probe `{name}` uses kind mcp but manifest defines no mcp_servers"
+                        ),
+                    });
+                }
+                if !manifest.mcp_servers.contains_key(server) {
+                    return Err(RuntimeError::Error {
+                        message: format!(
+                            "probe `{name}` references unknown MCP server `{server}`"
+                        ),
+                    });
+                }
+            }
             self.handlers.insert(name, binding.into());
         }
         Ok(())
@@ -87,6 +128,16 @@ impl RegistryProbeHost {
         self.handlers
             .get(name)
             .or_else(|| name.rsplit('.').next().and_then(|short| self.handlers.get(short)))
+    }
+
+    fn resolve_tool_name(probe_name: &str, tool: &Option<String>) -> String {
+        tool.clone().unwrap_or_else(|| {
+            probe_name
+                .rsplit('.')
+                .next()
+                .unwrap_or(probe_name)
+                .to_string()
+        })
     }
 }
 
@@ -99,7 +150,47 @@ impl ProbeHost for RegistryProbeHost {
         match handler {
             Handler::Jsonl { path } => invoke_jsonl_log(call, path.as_deref()),
             Handler::Command { command } => invoke_command_probe(call, command),
+            Handler::Mcp { server, tool } => {
+                let manager = self.mcp_manager.as_ref().ok_or_else(|| RuntimeError::Error {
+                    message: format!(
+                        "probe `{}` is configured as MCP but no MCP servers are loaded",
+                        call.name
+                    ),
+                })?;
+                let tool_name = Self::resolve_tool_name(call.name, tool);
+                let args = call
+                    .args
+                    .iter()
+                    .map(|(k, v)| (k.clone(), value_to_json(v)))
+                    .collect();
+                manager
+                    .call_tool(server, &tool_name, args)
+                    .map_err(|err| mcp_invoke_error(call.name, err))?;
+                Ok(Value::None)
+            }
         }
+    }
+}
+
+fn mcp_error_to_runtime(err: McpError) -> RuntimeError {
+    match err {
+        McpError::Transport { message } => RuntimeError::McpTransport { message },
+        McpError::ToolFailed { tool, message } => RuntimeError::ProbeFailed {
+            name: tool,
+            message,
+        },
+        McpError::Config { message } => RuntimeError::Error { message },
+    }
+}
+
+fn mcp_invoke_error(probe_name: &str, err: McpError) -> RuntimeError {
+    match err {
+        McpError::Transport { message } => RuntimeError::McpTransport { message },
+        McpError::ToolFailed { .. } => RuntimeError::ProbeFailed {
+            name: probe_name.to_string(),
+            message: err.to_string(),
+        },
+        McpError::Config { message } => RuntimeError::Error { message },
     }
 }
 
@@ -243,6 +334,7 @@ impl From<ProbeBinding> for Handler {
         match binding {
             ProbeBinding::Jsonl { path } => Handler::Jsonl { path },
             ProbeBinding::Command { command } => Handler::Command { command },
+            ProbeBinding::Mcp { server, tool } => Handler::Mcp { server, tool },
         }
     }
 }

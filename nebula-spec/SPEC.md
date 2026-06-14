@@ -140,12 +140,30 @@ mission main {
 - `set` requires the target binding to be `mut`.
 - `mission main` is the program entry point.
 - `probe` declares an external capability; `call` invokes it at runtime through the probe host.
-- The probe host dispatches declared probes to handlers configured in a JSON manifest (`jsonl` logging or external `command` processes). The built-in `log` probe writes structured JSONL events.
+- The probe host dispatches declared probes to handlers configured in a JSON manifest:
+  - **`jsonl`** — structured JSONL logging (built-in `log` probe)
+  - **`command`** — external process with Nebula stdin/stdout JSON protocol
+  - **`mcp`** — Model Context Protocol `tools/call` via stdio subprocess or Streamable HTTP
+- MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`.
 - `telemetry` blocks append structured JSONL traces for each statement executed within.
 - `emit` and `return` both exit the current function with a value.
 - Field access uses postfix `.` on any expression: `p.x`, `geo.origin().x`, `(get_point()).x`, and chained access `p.coords.x`. A suffix `.ident` followed by `(` or `{` forms a qualified call or struct literal when the object is a name or field-access chain (e.g. `math.double(n)`, `geo.Point{ x: 0, y: 0 }`).
 - Empty collection literals need a type when no context is available. `[]` defaults to `List<Int>` and `{}` defaults to `Map<Str, Int>`. When a surrounding annotation, parameter type, return type, or struct field type expects `List<T>` or `Map<K, V>`, an empty literal uses those type parameters (e.g. `let xs: List<Str> = []`, `return []` in a function returning `List<Str>`).
 - Integer `div` and `mod` with a zero divisor fail at runtime with `NEB-R004` (division by zero).
+
+### 7.1 Numeric semantics
+
+- Arithmetic (`plus`, `minus`, `times`, `div`, `mod`) and ordering (`less than`/`lt`, `greater than`/`gt`, `le`, `ge`) require **both operands to have the same numeric type** — either both `Int` or both `Float`. There is no implicit Int↔Float coercion; convert explicitly with `int_to_float` / `float_to_int`.
+- `plus` is additionally defined on `Str` (concatenation) when both operands are `Str`.
+- Integer `div` **truncates toward zero** and integer `mod` returns a remainder whose **sign follows the dividend** (C/Rust semantics, not Python floor division). `(0 minus 7) div 2` is `-3`; `(0 minus 7) mod 2` is `-1`.
+- Float `div` is true division; float `mod` follows the dividend's sign (`fmod`). Float division/modulo by `0.0` also raises `NEB-R004`.
+
+### 7.2 Equality and length
+
+- `eq` / `ne` perform **deep structural comparison** for every type, including `List`, `Map`, `Option`, and struct values. Two composites are equal when their elements/fields are pairwise equal (map and struct comparison is order-independent).
+- `len` on a `Str` counts **Unicode scalar values (code points)**, not bytes: `len("café")` is `4`.
+
+Both backends (interpreter and Python transpiler) implement these semantics identically; the `nebula-python` parity test suite enforces this.
 
 ## 8. Error Codes
 
@@ -156,9 +174,38 @@ mission main {
 | `NEB-R` | Runtime |
 | `NEB-R004` | Division by zero (`div` / `mod` with zero divisor) |
 | `NEB-P` | Probe |
+| `NEB-P004` | MCP transport / protocol failure |
 | `NEB-L` | Module load / import |
 
-## 9. Python transpilation
+## 9. Probe host manifest (MCP)
+
+Probe manifests may include an `mcp_servers` map and probe bindings with `"kind": "mcp"`:
+
+```json
+{
+  "mcp_servers": {
+    "local": {
+      "transport": "stdio",
+      "command": ["python3", "scripts/mcp_mock_stdio.py"]
+    },
+    "remote": {
+      "transport": "http",
+      "url": "http://127.0.0.1:8765/mcp",
+      "headers": { "Authorization": "Bearer token" }
+    }
+  },
+  "probes": {
+    "notify": { "kind": "mcp", "server": "local", "tool": "notify" }
+  }
+}
+```
+
+- **stdio** — spawn MCP server as subprocess; JSON-RPC over newline-delimited stdin/stdout
+- **http** — Streamable HTTP POST to `url` with optional `headers`
+- Probe `call` arguments are passed as MCP tool `arguments`
+- Unknown server references or invalid transport config fail at manifest load time
+
+## 10. Python transpilation
 
 Nebula can be lowered to IR and transpiled to Python (`nebula compile --target python --out <dir>`).
 
@@ -166,7 +213,7 @@ Nebula can be lowered to IR and transpiled to Python (`nebula compile --target p
 - Semantics are implemented by the `nebula_runtime` shim (builtins, probes, telemetry, truthiness, runtime errors).
 - Sector functions become `@staticmethod` methods on sector classes; qualified calls use `sector.fn(...)`.
 
-## 10. Builtins
+## 11. Builtins
 
 Provided by the runtime standard library:
 
@@ -175,3 +222,7 @@ Provided by the runtime standard library:
 - `push(list: List<T>, value: T) -> Void`
 - `str_to_int(s: Str) -> Int`
 - `int_to_str(n: Int) -> Str`
+- `str_to_float(s: Str) -> Float`
+- `float_to_str(f: Float) -> Str`
+- `int_to_float(n: Int) -> Float`
+- `float_to_int(f: Float) -> Int` (truncates toward zero)
