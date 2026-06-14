@@ -41,6 +41,15 @@ fn simple_builtin_handled(name: &str) -> bool {
             | "float_to_str"
             | "int_to_float"
             | "float_to_int"
+            | "substr"
+            | "contains"
+            | "index_of"
+            | "starts_with"
+            | "ends_with"
+            | "to_upper"
+            | "to_lower"
+            | "trim"
+            | "replace"
     )
 }
 
@@ -87,8 +96,111 @@ impl Runtime {
             "float_to_str" => self.eval_float_to_str(args),
             "int_to_float" => self.eval_int_to_float(args),
             "float_to_int" => self.eval_float_to_int(args),
+            "substr" => self.eval_substr(args),
+            "contains" => self.eval_contains(args),
+            "index_of" => self.eval_index_of(args),
+            "starts_with" => self.eval_starts_with(args),
+            "ends_with" => self.eval_ends_with(args),
+            "to_upper" => self.eval_to_upper(args),
+            "to_lower" => self.eval_to_lower(args),
+            "trim" => self.eval_trim(args),
+            "replace" => self.eval_replace(args),
             _ => Err(missing_handler_error(name)),
         }
+    }
+
+    /// Evaluate `args[index]` and require it to be a `Str`.
+    fn str_arg(&mut self, args: &[IrExpr], index: usize, fname: &str) -> Result<String, RuntimeError> {
+        let expr = args.get(index).ok_or_else(|| RuntimeError::Error {
+            message: format!("{fname} requires {} arguments", index + 1),
+        })?;
+        match self.eval_expr(expr)? {
+            Value::Str(s) => Ok(s),
+            _ => Err(RuntimeError::Error {
+                message: format!("{fname} requires Str arguments"),
+            }),
+        }
+    }
+
+    /// Evaluate `args[index]` and require it to be an `Int`.
+    fn int_arg(&mut self, args: &[IrExpr], index: usize, fname: &str) -> Result<i64, RuntimeError> {
+        let expr = args.get(index).ok_or_else(|| RuntimeError::Error {
+            message: format!("{fname} requires {} arguments", index + 1),
+        })?;
+        match self.eval_expr(expr)? {
+            Value::Int(n) => Ok(n),
+            _ => Err(RuntimeError::Error {
+                message: format!("{fname} requires an Int argument"),
+            }),
+        }
+    }
+
+    /// substr(s, start, end): code-point slice with start/end clamped to
+    /// [0, len] and start <= end. Negative bounds clamp to 0, mirroring the
+    /// lenient Python `chars[start:end]` lowering.
+    fn eval_substr(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "substr")?;
+        let start = self.int_arg(args, 1, "substr")?;
+        let end = self.int_arg(args, 2, "substr")?;
+        let chars: Vec<char> = s.chars().collect();
+        let n = chars.len() as i64;
+        let start = start.clamp(0, n);
+        let end = end.clamp(start, n);
+        Ok(Value::Str(
+            chars[start as usize..end as usize].iter().collect(),
+        ))
+    }
+
+    fn eval_contains(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "contains")?;
+        let needle = self.str_arg(args, 1, "contains")?;
+        Ok(Value::Bool(s.contains(&needle)))
+    }
+
+    /// index_of(s, needle): 0-based code-point index of the first occurrence,
+    /// or -1 when absent.
+    fn eval_index_of(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "index_of")?;
+        let needle = self.str_arg(args, 1, "index_of")?;
+        let idx = match s.find(&needle) {
+            Some(byte) => s[..byte].chars().count() as i64,
+            None => -1,
+        };
+        Ok(Value::Int(idx))
+    }
+
+    fn eval_starts_with(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "starts_with")?;
+        let prefix = self.str_arg(args, 1, "starts_with")?;
+        Ok(Value::Bool(s.starts_with(&prefix)))
+    }
+
+    fn eval_ends_with(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "ends_with")?;
+        let suffix = self.str_arg(args, 1, "ends_with")?;
+        Ok(Value::Bool(s.ends_with(&suffix)))
+    }
+
+    fn eval_to_upper(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "to_upper")?;
+        Ok(Value::Str(s.to_uppercase()))
+    }
+
+    fn eval_to_lower(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "to_lower")?;
+        Ok(Value::Str(s.to_lowercase()))
+    }
+
+    fn eval_trim(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "trim")?;
+        Ok(Value::Str(s.trim().to_string()))
+    }
+
+    fn eval_replace(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+        let s = self.str_arg(args, 0, "replace")?;
+        let from = self.str_arg(args, 1, "replace")?;
+        let to = self.str_arg(args, 2, "replace")?;
+        Ok(Value::Str(s.replace(&from, &to)))
     }
 
     fn eval_print(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {

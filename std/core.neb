@@ -14,7 +14,17 @@
 --   float_to_str(f: Float) -> Str
 --   int_to_float(n: Int) -> Float
 --   float_to_int(f: Float) -> Int             -- truncates toward zero
+--   substr(s: Str, start: Int, end: Int) -> Str  -- code-point slice, clamped
+--   contains(s: Str, needle: Str) -> Bool
+--   index_of(s: Str, needle: Str) -> Int      -- first code-point index, or -1
+--   starts_with(s: Str, prefix: Str) -> Bool
+--   ends_with(s: Str, suffix: Str) -> Bool
+--   to_upper(s: Str) -> Str
+--   to_lower(s: Str) -> Str
+--   trim(s: Str) -> Str
+--   replace(s: Str, from: Str, to: Str) -> Str   -- replaces all occurrences
 --
+-- String indices/lengths are in Unicode code points; both backends agree.
 -- Numeric ops require matching operand types (both Int or both Float); there is
 -- no implicit Int/Float coercion. Integer div/mod truncate toward zero. Int is
 -- 64-bit with checked arithmetic: overflow raises NEB-R007 (never wraps).

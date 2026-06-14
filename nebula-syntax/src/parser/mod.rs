@@ -350,6 +350,24 @@ impl Parser {
         }
     }
 
+    pub(super) fn parse_named_arg_list(&mut self) -> Result<Vec<Spanned<NamedArg>>, ParseError> {
+        let mut args = Vec::new();
+        if self.peek().map(|t| &t.kind) == Some(&TokenKind::RParen) {
+            return Ok(args);
+        }
+        loop {
+            let name = self.parse_ident()?;
+            self.expect(TokenKind::Colon, ":")?;
+            let value = self.parse_expr()?;
+            let span = name.span.start..value.span.end;
+            args.push(Spanned::new(NamedArg { name, value }, span));
+            if self.match_kind(TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        Ok(args)
+    }
+
     fn parse_string_lit(&mut self) -> Result<Spanned<String>, ParseError> {
         match self.advance() {
             Some(Token {

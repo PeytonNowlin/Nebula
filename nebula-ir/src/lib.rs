@@ -123,6 +123,10 @@ pub enum IrExprKind {
         name: String,
         args: Vec<IrExpr>,
     },
+    ProbeCall {
+        name: String,
+        args: HashMap<String, IrExpr>,
+    },
     List(Vec<IrExpr>),
     Map(Vec<(IrExpr, IrExpr)>),
     Struct {
@@ -299,6 +303,19 @@ fn lower_expr_kind(expr: &Expr) -> IrExprKind {
             name: callee.node.clone(),
             args: args.iter().map(|a| lower_expr(a)).collect(),
         },
+        Expr::ProbeCall { name, args } => {
+            let mut arg_map = HashMap::new();
+            for arg in args {
+                arg_map.insert(
+                    arg.node.name.node.clone(),
+                    lower_expr(&arg.node.value),
+                );
+            }
+            IrExprKind::ProbeCall {
+                name: name.node.clone(),
+                args: arg_map,
+            }
+        }
         Expr::List(items) => IrExprKind::List(items.iter().map(|i| lower_expr(i)).collect()),
         Expr::Map(entries) => IrExprKind::Map(
             entries

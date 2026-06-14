@@ -1,0 +1,10 @@
+{
+  "probes": {
+    "log": { "kind": "jsonl" },
+    "read_file": { "kind": "read_file" },
+    "write_file": { "kind": "write_file" },
+    "http_get": { "kind": "http_get" },
+    "json_parse": { "kind": "json_parse" },
+    "env_get": { "kind": "env_get" }
+  }
+}

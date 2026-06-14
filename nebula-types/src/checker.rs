@@ -96,7 +96,7 @@ impl Checker {
         resolve_symbol(name, self.current_sector.as_deref(), &self.structs)
     }
 
-    fn resolve_probe(&self, name: &str) -> Option<String> {
+    pub(super) fn resolve_probe(&self, name: &str) -> Option<String> {
         resolve_symbol(name, self.current_sector.as_deref(), &self.probes)
     }
 
@@ -420,14 +420,14 @@ impl Checker {
         }
     }
 
-    fn check_probe_call(
+    pub(super) fn check_probe_call(
         &self,
         probe: &ProbeInfo,
         args: &[Spanned<NamedArg>],
         span: Span,
         scope: &mut Scope,
         errors: &mut Vec<TypeError>,
-    ) {
+    ) -> Type {
         for (pname, pty) in &probe.params {
             let found = args.iter().find(|a| a.node.name.node == *pname);
             match found {
@@ -449,5 +449,6 @@ impl Checker {
                 }),
             }
         }
+        self.resolve_type(&probe.return_type)
     }
 }

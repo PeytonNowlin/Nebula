@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "probe-manifest.schema.json",
+  "title": "NebulaProbeManifest",
+  "description": "Probe host manifest mapping declared probe names to handler bindings.",
+  "type": "object",
+  "required": ["probes"],
+  "additionalProperties": false,
+  "properties": {
+    "mcp_servers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/mcpServer" }
+    },
+    "probes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/probeBinding" }
+    }
+  },
+  "$defs": {
+    "mcpServer": {
+      "type": "object",
+      "required": ["transport"],
+      "additionalProperties": false,
+      "properties": {
+        "transport": {
+          "type": "string",
+          "enum": ["stdio", "http"]
+        },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "url": { "type": "string" },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "probeBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "jsonl" },
+            "path": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "command"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "command" },
+            "command": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "server"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "mcp" },
+            "server": { "type": "string" },
+            "tool": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "read_file" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "write_file" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "http_get" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "json_parse" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "env_get" } }
+        }
+      ]
+    }
+  }
+}

@@ -29,6 +29,11 @@ pub enum ProbeBinding {
         #[serde(default)]
         tool: Option<String>,
     },
+    ReadFile,
+    WriteFile,
+    HttpGet,
+    JsonParse,
+    EnvGet,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,6 +61,21 @@ pub enum DeclaredProbe {
         server: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         tool: Option<String>,
+    },
+    ReadFile {
+        name: String,
+    },
+    WriteFile {
+        name: String,
+    },
+    HttpGet {
+        name: String,
+    },
+    JsonParse {
+        name: String,
+    },
+    EnvGet {
+        name: String,
     },
 }
 
@@ -102,7 +122,12 @@ fn resolve_manifest_paths(manifest: &mut ProbeManifest, manifest_path: &Path) {
                     resolve_relative_path_arg(arg, manifest_path);
                 }
             }
-            ProbeBinding::Mcp { .. } => {}
+            ProbeBinding::Mcp { .. }
+            | ProbeBinding::ReadFile
+            | ProbeBinding::WriteFile
+            | ProbeBinding::HttpGet
+            | ProbeBinding::JsonParse
+            | ProbeBinding::EnvGet => {}
         }
     }
 }
@@ -176,7 +201,12 @@ fn probe_name(probe: &DeclaredProbe) -> &str {
     match probe {
         DeclaredProbe::Jsonl { name, .. }
         | DeclaredProbe::Command { name, .. }
-        | DeclaredProbe::Mcp { name, .. } => name,
+        | DeclaredProbe::Mcp { name, .. }
+        | DeclaredProbe::ReadFile { name }
+        | DeclaredProbe::WriteFile { name }
+        | DeclaredProbe::HttpGet { name }
+        | DeclaredProbe::JsonParse { name }
+        | DeclaredProbe::EnvGet { name } => name,
     }
 }
 
@@ -194,6 +224,21 @@ fn declared_probe(name: &str, binding: &ProbeBinding) -> DeclaredProbe {
             name: name.to_string(),
             server: server.clone(),
             tool: tool.clone(),
+        },
+        ProbeBinding::ReadFile => DeclaredProbe::ReadFile {
+            name: name.to_string(),
+        },
+        ProbeBinding::WriteFile => DeclaredProbe::WriteFile {
+            name: name.to_string(),
+        },
+        ProbeBinding::HttpGet => DeclaredProbe::HttpGet {
+            name: name.to_string(),
+        },
+        ProbeBinding::JsonParse => DeclaredProbe::JsonParse {
+            name: name.to_string(),
+        },
+        ProbeBinding::EnvGet => DeclaredProbe::EnvGet {
+            name: name.to_string(),
         },
     }
 }

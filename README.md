@@ -111,6 +111,7 @@ cargo run -- ir examples/hello.neb --json
 # Run with observation
 cargo run -- run examples/agent_counter.neb --telemetry trace.jsonl
 cargo run -- run examples/agent_counter.neb --probes probes/host.json
+cargo run -- run examples/io_agent.neb --probes probes/bundle.json
 cargo run -- run examples/runbook.neb --probes probes/runbook.json
 
 # Discover MCP tools before authoring probe calls
@@ -226,6 +227,15 @@ Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 | `float_to_str` | `fn(f: Float) -> Str` | |
 | `int_to_float` | `fn(n: Int) -> Float` | Explicit widening (no implicit coercion) |
 | `float_to_int` | `fn(f: Float) -> Int` | Truncates toward zero |
+| `substr` | `fn(s: Str, start: Int, end: Int) -> Str` | Code-point slice `[start, end)`, clamped; no negative indexing |
+| `contains` | `fn(s: Str, needle: Str) -> Bool` | Substring test |
+| `index_of` | `fn(s: Str, needle: Str) -> Int` | First code-point index of `needle`, or `-1` |
+| `starts_with` | `fn(s: Str, prefix: Str) -> Bool` | |
+| `ends_with` | `fn(s: Str, suffix: Str) -> Bool` | |
+| `to_upper` | `fn(s: Str) -> Str` | |
+| `to_lower` | `fn(s: Str) -> Str` | |
+| `trim` | `fn(s: Str) -> Str` | Strip leading/trailing whitespace |
+| `replace` | `fn(s: Str, from: Str, to: Str) -> Str` | Replace all occurrences |
 
 ### Numeric semantics
 
@@ -244,6 +254,15 @@ Probes declare capabilities the host is expected to provide. `call` invokes them
 | `jsonl` | Built-in structured logging (`log` probe writes JSONL to stderr or a file) |
 | `command` | External process with Nebula's stdin/stdout JSON protocol |
 | `mcp` | Model Context Protocol tool via shared stdio or HTTP server connection |
+| `read_file` / `write_file` / `http_get` / `json_parse` / `env_get` | Native bundle handlers (manifest-only; still require `probe` declarations in source) |
+
+**Default probe bundle** — [`probes/bundle.json`](probes/bundle.json) wires `log` plus five I/O probes for orchestration without custom command scripts:
+
+```bash
+cargo run -- run examples/io_agent.neb --probes probes/bundle.json
+```
+
+Bundle probes inherit the host process permissions; treat manifests as trusted configuration.
 
 **Command probes** use a stdin/stdout JSON protocol:
 
@@ -281,7 +300,7 @@ Probes declare capabilities the host is expected to provide. `call` invokes them
 - `tool` defaults to the probe's short name if omitted.
 - MCP transport failures report `NEB-P004`; tool execution errors report `NEB-P003`.
 
-Example manifests: [`probes/host.json`](probes/host.json), [`probes/mcp_stdio.json`](probes/mcp_stdio.json). Mock MCP servers for tests: [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py), [`scripts/mcp_mock_http.py`](scripts/mcp_mock_http.py).
+Example manifests: [`probes/host.json`](probes/host.json), [`probes/bundle.json`](probes/bundle.json), [`probes/mcp_stdio.json`](probes/mcp_stdio.json). Mock MCP servers for tests: [`scripts/mcp_mock_stdio.py`](scripts/mcp_mock_stdio.py), [`scripts/mcp_mock_http.py`](scripts/mcp_mock_http.py).
 
 ```nebula
 mission main {

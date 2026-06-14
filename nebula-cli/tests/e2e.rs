@@ -183,6 +183,35 @@ fn cli_probes_list_json_reports_manifest_bindings() {
 }
 
 #[test]
+fn cli_probes_list_json_reports_bundle_handlers() {
+    let manifest = workspace_root().join("probes/bundle.json");
+    let output = Command::new(nebula_bin())
+        .arg("probes")
+        .arg("list")
+        .arg("--json")
+        .arg("--probes")
+        .arg(&manifest)
+        .output()
+        .expect("spawn nebula probes list --json");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let probes = parsed["probes"].as_array().expect("probes array");
+    for (name, kind) in [
+        ("read_file", "read_file"),
+        ("write_file", "write_file"),
+        ("http_get", "http_get"),
+        ("json_parse", "json_parse"),
+        ("env_get", "env_get"),
+    ] {
+        assert!(
+            probes.iter().any(|probe| probe["name"] == name && probe["kind"] == kind),
+            "missing bundle probe {name}"
+        );
+    }
+}
+
+#[test]
 fn cli_probes_list_mcp_discovers_tools() {
     let manifest = workspace_root().join("probes/mcp_stdio.json");
     let output = Command::new(nebula_bin())

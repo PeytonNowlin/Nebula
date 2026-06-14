@@ -126,6 +126,18 @@ impl Checker {
                     }
                 }
             }
+            Expr::ProbeCall { name, args } => {
+                if let Some(resolved) = self.resolve_probe(&name.node) {
+                    if let Some(probe) = self.probes.get(&resolved).cloned() {
+                        return self.check_probe_call(&probe, args, name.span.clone(), scope, errors);
+                    }
+                }
+                errors.push(TypeError::UndefinedProbe {
+                    name: name.node.clone(),
+                    span: name.span.clone(),
+                });
+                Type::Void
+            }
             Expr::Call { callee, args } => {
                 let name = &callee.node;
                 if let Some(ret) = self.check_builtin_call(name, args, scope, errors) {

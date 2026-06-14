@@ -298,6 +298,20 @@ fn format_expr(out: &mut String, expr: &Expr) {
             }
             out.push(')');
         }
+        Expr::ProbeCall { name, args } => {
+            out.push_str("call ");
+            out.push_str(&name.node);
+            out.push('(');
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&arg.node.name.node);
+                out.push_str(": ");
+                format_expr(out, &arg.node.value.node);
+            }
+            out.push(')');
+        }
         Expr::List(items) => {
             out.push('[');
             for (i, item) in items.iter().enumerate() {

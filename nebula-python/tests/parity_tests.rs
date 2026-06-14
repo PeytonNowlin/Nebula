@@ -15,13 +15,15 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn capture_interpreter_stdout(file: &PathBuf) -> String {
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "run"])
+fn capture_interpreter_stdout(file: &PathBuf, probe_manifest: Option<&PathBuf>) -> String {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["run", "--quiet", "--", "run"])
         .arg(file)
-        .current_dir(workspace_root())
-        .output()
-        .expect("cargo run");
+        .current_dir(workspace_root());
+    if let Some(manifest) = probe_manifest {
+        cmd.arg("--probes").arg(manifest);
+    }
+    let output = cmd.output().expect("cargo run");
     assert!(
         output.status.success(),
         "interpreter failed: {}",
@@ -30,7 +32,11 @@ fn capture_interpreter_stdout(file: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn compile_and_run_python(file: &PathBuf, out_dir: &PathBuf) -> String {
+fn compile_and_run_python(
+    file: &PathBuf,
+    out_dir: &PathBuf,
+    probe_manifest: Option<PathBuf>,
+) -> String {
     let source = fs::read_to_string(file).expect("read source");
     let program = parse(&source).expect("parse");
     let loaded = load_workspace(file, program).expect("load");
@@ -42,7 +48,7 @@ fn compile_and_run_python(file: &PathBuf, out_dir: &PathBuf) -> String {
         &EmitOptions {
             out_dir: out_dir.clone(),
             entry_path: file.clone(),
-            probe_manifest: None,
+            probe_manifest,
             telemetry_path: None,
         },
     )
@@ -66,8 +72,8 @@ fn transpiled_hello_matches_interpreter_stdout() {
     let out_dir = std::env::temp_dir().join("nebula-py-parity-hello");
     let _ = fs::remove_dir_all(&out_dir);
     assert_eq!(
-        capture_interpreter_stdout(&file),
-        compile_and_run_python(&file, &out_dir)
+        capture_interpreter_stdout(&file, None),
+        compile_and_run_python(&file, &out_dir, None)
     );
 }
 
@@ -77,8 +83,8 @@ fn transpiled_import_demo_matches_interpreter_stdout() {
     let out_dir = std::env::temp_dir().join("nebula-py-parity-import_demo");
     let _ = fs::remove_dir_all(&out_dir);
     assert_eq!(
-        capture_interpreter_stdout(&file),
-        compile_and_run_python(&file, &out_dir)
+        capture_interpreter_stdout(&file, None),
+        compile_and_run_python(&file, &out_dir, None)
     );
 }
 
@@ -92,8 +98,8 @@ fn assert_parity(slug: &str, src: &str) {
     let file = out_dir.join("entry.neb");
     fs::write(&file, src).expect("write entry");
     assert_eq!(
-        capture_interpreter_stdout(&file),
-        compile_and_run_python(&file, &out_dir),
+        capture_interpreter_stdout(&file, None),
+        compile_and_run_python(&file, &out_dir, None),
         "interpreter and Python backend diverged for `{slug}`"
     );
 }
@@ -183,6 +189,32 @@ mission main {
 }
 
 #[test]
+fn parity_string_operations() {
+    assert_parity(
+        "string_ops",
+        r#"
+mission main {
+  let s: Str = trim("  Hello, World  ");
+  print(s);
+  print(to_upper(s));
+  print(to_lower(s));
+  print(substr(s, 0, 5));
+  print(substr(s, 7, 99));
+  print(int_to_str(index_of(s, "World")));
+  print(int_to_str(index_of(s, "zzz")));
+  if contains(s, "World") then print("c1"); else print("c0"); end
+  if starts_with(s, "Hello") then print("s1"); else print("s0"); end
+  if ends_with(s, "World") then print("e1"); else print("e0"); end
+  print(replace(s, "World", "Nebula"));
+  print(substr("café", 0, 3));
+  print(int_to_str(index_of("café", "é")));
+  print(to_upper("café"));
+}
+"#,
+    );
+}
+
+#[test]
 fn parity_map_insert() {
     assert_parity(
         "map_insert",
@@ -217,5 +249,37 @@ mission main {
   if x lt y then print("lt"); else print("ge"); end
 }
 "#,
+    );
+}
+
+#[test]
+fn bundle_read_file_and_json_parse_match_between_backends() {
+    let out_dir = std::env::temp_dir().join("nebula-py-parity-bundle");
+    let _ = fs::remove_dir_all(&out_dir);
+    fs::create_dir_all(&out_dir).expect("create out dir");
+
+    let data_path = out_dir.join("data.json");
+    fs::write(&data_path, r#"{"status":"ok"}"#).expect("write data");
+
+    let file = out_dir.join("entry.neb");
+    let src = format!(
+        r#"
+mission main {{
+  probe read_file(path: Str) -> Str;
+  probe json_parse(text: Str) -> Map<Str, Str>;
+  let raw: Str = call read_file(path: "{}");
+  let cfg: Map<Str, Str> = call json_parse(text: raw);
+  print(get(cfg, "status"));
+}}
+"#,
+        data_path.display()
+    );
+    fs::write(&file, src).expect("write entry");
+
+    let manifest = workspace_root().join("probes/bundle.json");
+    assert_eq!(
+        capture_interpreter_stdout(&file, Some(&manifest)),
+        compile_and_run_python(&file, &out_dir, Some(manifest)),
+        "bundle probe parity failed"
     );
 }

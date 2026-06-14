@@ -162,6 +162,18 @@ fn diagnostic_schema_rejects_malformed_records() {
 }
 
 #[test]
+fn probe_manifest_schema_validates_bundle() {
+    let validator = load_schema("probe-manifest.schema.json");
+    let manifest_path = workspace_root().join("probes/bundle.json");
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).expect("read bundle manifest"))
+            .expect("parse bundle manifest");
+    validator
+        .validate(&manifest)
+        .expect("bundle manifest should validate");
+}
+
+#[test]
 fn nebula_value_schema_accepts_struct_and_option_wrappers() {
     let validator = load_schema("nebula-value.schema.json");
     let samples = [

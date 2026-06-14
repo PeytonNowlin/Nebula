@@ -86,6 +86,7 @@ postfix_expr   = primary_expr { postfix_suffix } ;
 postfix_suffix = "." ident [ call_or_struct_suffix ] ;
 call_or_struct_suffix = "(" [ expr_list ] ")" | "{" [ field_init { "," field_init } ] "}" ;
 primary_expr   = int_lit | float_lit | string_lit | bool_lit | "None" | "Some" "(" expr ")"
+               | "call" ident "(" [ arg_list ] ")"
                | ident [ call_or_struct_suffix ]
                | "(" expr ")" | list_lit | map_lit ;
 expr_list      = expr { "," expr } ;
@@ -135,11 +136,18 @@ mission main {
 - Bindings are immutable unless declared with `mut`.
 - `set` requires the target binding to be `mut`.
 - `mission main` is the program entry point.
-- `probe` declares an external capability; `call` invokes it at runtime through the probe host.
+- `probe` declares an external capability; `call` invokes it at runtime through the probe host. A probe's declared return type is the type of a `call` expression (`let status: Int = call fetch_status(url: "...");`). Statement-form `call ...;` discards the result (typical for `Void` probes).
 - The probe host dispatches declared probes to handlers configured in a JSON manifest:
   - **`jsonl`** — structured JSONL logging (built-in `log` probe)
   - **`command`** — external process with Nebula stdin/stdout JSON protocol
   - **`mcp`** — Model Context Protocol `tools/call` via stdio subprocess or Streamable HTTP
+  - **Bundle handlers** (manifest-only; not language builtins): `read_file`, `write_file`, `http_get`, `json_parse`, `env_get`. See [`probes/bundle.json`](../probes/bundle.json).
+- Canonical bundle signatures:
+  - `probe read_file(path: Str) -> Str`
+  - `probe write_file(path: Str, content: Str) -> Void`
+  - `probe http_get(url: Str) -> Str`
+  - `probe json_parse(text: Str) -> Map<Str, Str>` (nested JSON values are supported at runtime)
+  - `probe env_get(key: Str) -> Option<Str>`
 - MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`. Agents can introspect manifest bindings with `nebula probes list --probes <path>`; add `--mcp` to query each server's live `tools/list` catalog.
 - `telemetry` blocks append structured JSONL traces for each statement executed within. Each line matches [`schemas/telemetry-event.schema.json`](../schemas/telemetry-event.schema.json) (`step`: `let` | `set` | `probe`, `detail`: binding or probe name).
 - `jsonl` probe handlers (including built-in `log`) append lines matching [`schemas/probe-jsonl-event.schema.json`](../schemas/probe-jsonl-event.schema.json). Probe argument values use the encoding in [`schemas/nebula-value.schema.json`](../schemas/nebula-value.schema.json).
@@ -233,3 +241,15 @@ Provided by the runtime standard library:
 - `float_to_str(f: Float) -> Str`
 - `int_to_float(n: Int) -> Float`
 - `float_to_int(f: Float) -> Int` (truncates toward zero)
+
+String operations (all indices and lengths are in Unicode code points; both backends agree):
+
+- `substr(s: Str, start: Int, end: Int) -> Str` (slice `[start, end)`, clamped to `[0, len]` with `start <= end`; no negative indexing)
+- `contains(s: Str, needle: Str) -> Bool`
+- `index_of(s: Str, needle: Str) -> Int` (0-based code-point index of the first match, or `-1`)
+- `starts_with(s: Str, prefix: Str) -> Bool`
+- `ends_with(s: Str, suffix: Str) -> Bool`
+- `to_upper(s: Str) -> Str`
+- `to_lower(s: Str) -> Str`
+- `trim(s: Str) -> Str` (removes leading/trailing whitespace)
+- `replace(s: Str, from: Str, to: Str) -> Str` (replaces all non-overlapping occurrences)

@@ -57,6 +57,17 @@ mission main {
 }
 
 #[test]
+fn parse_probe_call_in_expression() {
+    let src = r#"
+mission main {
+  probe fetch_status(url: Str) -> Int;
+  let status: Int = call fetch_status(url: "https://example.com");
+}
+"#;
+    parse(src).expect("probe call in expression should parse");
+}
+
+#[test]
 fn parse_if_while_with_end() {
     let src = r#"
 mission main {

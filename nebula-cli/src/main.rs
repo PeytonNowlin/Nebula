@@ -309,6 +309,11 @@ fn list_probes(
                     println!("  {name:<16} mcp  server={server}");
                 }
             }
+            DeclaredProbe::ReadFile { name } => println!("  {name:<16} read_file"),
+            DeclaredProbe::WriteFile { name } => println!("  {name:<16} write_file"),
+            DeclaredProbe::HttpGet { name } => println!("  {name:<16} http_get"),
+            DeclaredProbe::JsonParse { name } => println!("  {name:<16} json_parse"),
+            DeclaredProbe::EnvGet { name } => println!("  {name:<16} env_get"),
         }
     }
 

@@ -510,6 +510,18 @@ impl<'a> ModuleEmitter<'a> {
                     python_string(field)
                 )
             }
+            IrExprKind::ProbeCall { name, args } => {
+                let resolved = self.resolve_probe_name(name);
+                let mut pairs = Vec::new();
+                for (key, value) in args {
+                    pairs.push(format!("{}: {}", python_string(key), self.emit_expr(value)?));
+                }
+                format!(
+                    "PROBE_HOST.call({}, {{{}}})",
+                    python_string(&resolved),
+                    pairs.join(", ")
+                )
+            }
         })
     }
 

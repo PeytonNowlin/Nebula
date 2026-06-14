@@ -1,7 +1,10 @@
 import json
+import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -73,6 +76,16 @@ class RegistryProbeHost:
             except NebulaMcpError as err:
                 raise NebulaProbeError(str(err)) from err
             return None
+        if kind == "read_file":
+            return self._invoke_read_file(name, args)
+        if kind == "write_file":
+            return self._invoke_write_file(name, args)
+        if kind == "http_get":
+            return self._invoke_http_get(name, args)
+        if kind == "json_parse":
+            return self._invoke_json_parse(name, args)
+        if kind == "env_get":
+            return self._invoke_env_get(name, args)
         raise NebulaProbeError(f"unknown probe handler kind for `{name}`")
 
     def close(self) -> None:
@@ -116,3 +129,63 @@ class RegistryProbeHost:
             message = response.get("message", "probe command returned error status")
             raise NebulaProbeError(f"NEB-P003 [probe_error] probe `{name}` failed: {message}")
         return response.get("value")
+
+    def _required_str_arg(self, name: str, args: Dict[str, Any], key: str) -> str:
+        if key not in args:
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: missing required argument `{key}`"
+            )
+        value = args[key]
+        if not isinstance(value, str):
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: argument `{key}` must be Str"
+            )
+        return value
+
+    def _invoke_read_file(self, name: str, args: Dict[str, Any]) -> str:
+        path = self._required_str_arg(name, args, "path")
+        try:
+            return Path(path).read_text(encoding="utf-8")
+        except OSError as err:
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: {err}"
+            ) from err
+
+    def _invoke_write_file(self, name: str, args: Dict[str, Any]) -> None:
+        path = self._required_str_arg(name, args, "path")
+        content = self._required_str_arg(name, args, "content")
+        try:
+            Path(path).write_text(content, encoding="utf-8")
+        except OSError as err:
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: {err}"
+            ) from err
+        return None
+
+    def _invoke_http_get(self, name: str, args: Dict[str, Any]) -> str:
+        url = self._required_str_arg(name, args, "url")
+        try:
+            with urllib.request.urlopen(url) as response:
+                return response.read().decode("utf-8")
+        except (OSError, urllib.error.URLError) as err:
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: {err}"
+            ) from err
+
+    def _invoke_json_parse(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        text = self._required_str_arg(name, args, "text")
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError as err:
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: {err}"
+            ) from err
+        if not isinstance(value, dict):
+            raise NebulaProbeError(
+                f"NEB-P003 [probe_error] probe `{name}` failed: json_parse requires a JSON object at the top level"
+            )
+        return value
+
+    def _invoke_env_get(self, name: str, args: Dict[str, Any]) -> Optional[str]:
+        key = self._required_str_arg(name, args, "key")
+        return os.environ.get(key)

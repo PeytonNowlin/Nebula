@@ -148,6 +148,10 @@ pub enum Expr {
         callee: Spanned<String>,
         args: Vec<Spanned<Expr>>,
     },
+    ProbeCall {
+        name: Spanned<String>,
+        args: Vec<Spanned<NamedArg>>,
+    },
     Unary {
         op: UnaryOp,
         operand: Box<Spanned<Expr>>,

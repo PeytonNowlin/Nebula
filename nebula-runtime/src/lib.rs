@@ -1,6 +1,7 @@
 mod builtins;
 mod diagnostic_extract;
 mod probe;
+mod probe_bundle;
 mod probe_manifest;
 
 use std::collections::HashMap;
@@ -278,19 +279,7 @@ impl Runtime {
                 Ok(None)
             }
             IrStmt::ProbeCall { name, args } => {
-                let resolved = self.resolve_probe(name);
-                if !self.probes.contains_key(&resolved) {
-                    return Err(RuntimeError::UndefinedProbe { name: name.clone() });
-                }
-                let mut evaluated = HashMap::new();
-                for (k, v) in args {
-                    evaluated.insert(k.clone(), self.eval_expr(v)?);
-                }
-                self.log_telemetry("probe", &resolved);
-                self.probe_host.invoke(&ProbeInvocation {
-                    name: &resolved,
-                    args: evaluated,
-                })?;
+                self.invoke_probe(name, args)?;
                 Ok(None)
             }
             IrStmt::Telemetry { body } => {
@@ -413,7 +402,30 @@ impl Runtime {
                     }),
                 }
             }
+            IrExprKind::ProbeCall { name, args } => self.invoke_probe(name, args),
         }
+    }
+
+    fn invoke_probe(
+        &mut self,
+        name: &str,
+        args: &HashMap<String, IrExpr>,
+    ) -> Result<Value, RuntimeError> {
+        let resolved = self.resolve_probe(name);
+        if !self.probes.contains_key(&resolved) {
+            return Err(RuntimeError::UndefinedProbe {
+                name: name.to_string(),
+            });
+        }
+        let mut evaluated = HashMap::new();
+        for (k, v) in args {
+            evaluated.insert(k.clone(), self.eval_expr(v)?);
+        }
+        self.log_telemetry("probe", &resolved);
+        self.probe_host.invoke(&ProbeInvocation {
+            name: &resolved,
+            args: evaluated,
+        })
     }
 
     fn resolve_function(&self, name: &str) -> String {

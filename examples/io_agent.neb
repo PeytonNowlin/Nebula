@@ -1,0 +1,19 @@
+-- IO agent: read a config file, parse JSON, and branch on a field.
+-- Requires the default probe bundle: --probes probes/bundle.json
+
+mission main {
+  probe read_file(path: Str) -> Str;
+  probe json_parse(text: Str) -> Map<Str, Str>;
+  probe write_file(path: Str, content: Str) -> Void;
+  probe log(level: Str, message: Str) -> Void;
+
+  let raw: Str = call read_file(path: "examples/io_config.json");
+  let cfg: Map<Str, Str> = call json_parse(text: raw);
+
+  if has(cfg, "mode") and get(cfg, "mode") eq "dry-run" then
+    call log(level: "info", message: "dry-run");
+  else
+    call write_file(path: "examples/io_output.txt", content: "ready");
+    call log(level: "info", message: "wrote output");
+  end
+}

@@ -187,10 +187,11 @@ mod tests {
     #[test]
     fn manifest_lists_all_runtime_builtins() {
         let names: Vec<_> = manifest().names().collect();
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 22);
         for name in [
             "print", "len", "push", "at", "get", "has", "insert", "str_to_int", "int_to_str",
-            "str_to_float", "float_to_str", "int_to_float", "float_to_int",
+            "str_to_float", "float_to_str", "int_to_float", "float_to_int", "substr", "contains",
+            "index_of", "starts_with", "ends_with", "to_upper", "to_lower", "trim", "replace",
         ] {
             assert!(manifest().is_builtin(name), "missing builtin {name}");
         }

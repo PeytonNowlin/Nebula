@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use nebula_mcp::{McpConnectionManager, McpError};
 use serde::{Deserialize, Serialize};
 
+use crate::probe_bundle::{
+    invoke_env_get, invoke_http_get, invoke_json_parse, invoke_read_file, invoke_write_file,
+};
 use crate::probe_manifest::{read_probe_manifest, validate_manifest, ProbeBinding};
 use crate::{RuntimeError, Value};
 
@@ -37,6 +40,11 @@ enum Handler {
         server: String,
         tool: Option<String>,
     },
+    ReadFile,
+    WriteFile,
+    HttpGet,
+    JsonParse,
+    EnvGet,
 }
 
 /// Default probe host: built-in handlers plus optional manifest overrides.
@@ -123,6 +131,11 @@ impl ProbeHost for RegistryProbeHost {
                     .map_err(|err| mcp_invoke_error(call.name, err))?;
                 Ok(Value::None)
             }
+            Handler::ReadFile => invoke_read_file(call.name, &call.args),
+            Handler::WriteFile => invoke_write_file(call.name, &call.args),
+            Handler::HttpGet => invoke_http_get(call.name, &call.args),
+            Handler::JsonParse => invoke_json_parse(call.name, &call.args),
+            Handler::EnvGet => invoke_env_get(call.name, &call.args),
         }
     }
 }
@@ -290,6 +303,11 @@ impl From<ProbeBinding> for Handler {
             ProbeBinding::Jsonl { path } => Handler::Jsonl { path },
             ProbeBinding::Command { command } => Handler::Command { command },
             ProbeBinding::Mcp { server, tool } => Handler::Mcp { server, tool },
+            ProbeBinding::ReadFile => Handler::ReadFile,
+            ProbeBinding::WriteFile => Handler::WriteFile,
+            ProbeBinding::HttpGet => Handler::HttpGet,
+            ProbeBinding::JsonParse => Handler::JsonParse,
+            ProbeBinding::EnvGet => Handler::EnvGet,
         }
     }
 }

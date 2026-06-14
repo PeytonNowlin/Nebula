@@ -359,6 +359,17 @@ impl Parser {
                 let end = self.expect(TokenKind::RBrace, "}")?.span.end;
                 Ok(Spanned::new(Expr::Map(entries), start..end))
             }
+            TokenKind::Call => {
+                self.advance();
+                let name = self.parse_qualifiable_name()?;
+                self.expect(TokenKind::LParen, "(")?;
+                let args = self.parse_named_arg_list()?;
+                let end = self.expect(TokenKind::RParen, ")")?.span.end;
+                Ok(Spanned::new(
+                    Expr::ProbeCall { name, args },
+                    start..end,
+                ))
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 if self.peek().map(|t| &t.kind) == Some(&TokenKind::LParen) {

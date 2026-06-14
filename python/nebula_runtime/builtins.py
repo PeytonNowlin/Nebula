@@ -15,6 +15,15 @@ __all__ = [
     "nebula_float_to_str",
     "nebula_int_to_float",
     "nebula_float_to_int",
+    "nebula_substr",
+    "nebula_contains",
+    "nebula_index_of",
+    "nebula_starts_with",
+    "nebula_ends_with",
+    "nebula_to_upper",
+    "nebula_to_lower",
+    "nebula_trim",
+    "nebula_replace",
     "nebula_add",
     "nebula_sub",
     "nebula_mul",
@@ -139,6 +148,57 @@ def nebula_float_to_int(value: float) -> int:
     if not isinstance(value, float):
         raise NebulaRuntimeError("float_to_int expects Float")
     return int(value)  # truncates toward zero
+
+
+def _require_str(value, fname: str) -> str:
+    if not isinstance(value, str):
+        raise NebulaRuntimeError(f"{fname} expects Str arguments")
+    return value
+
+
+def nebula_substr(s: str, start: int, end: int) -> str:
+    # Code-point slice; clamp to [0, len] with start <= end (Python str slicing
+    # is already code-point based, matching the interpreter's char slice).
+    s = _require_str(s, "substr")
+    n = len(s)
+    st = max(0, min(start, n))
+    en = max(st, min(end, n))
+    return s[st:en]
+
+
+def nebula_contains(s: str, needle: str) -> bool:
+    return _require_str(needle, "contains") in _require_str(s, "contains")
+
+
+def nebula_index_of(s: str, needle: str) -> int:
+    # 0-based code-point index, or -1 when absent (Python str.find is code-point).
+    return _require_str(s, "index_of").find(_require_str(needle, "index_of"))
+
+
+def nebula_starts_with(s: str, prefix: str) -> bool:
+    return _require_str(s, "starts_with").startswith(_require_str(prefix, "starts_with"))
+
+
+def nebula_ends_with(s: str, suffix: str) -> bool:
+    return _require_str(s, "ends_with").endswith(_require_str(suffix, "ends_with"))
+
+
+def nebula_to_upper(s: str) -> str:
+    return _require_str(s, "to_upper").upper()
+
+
+def nebula_to_lower(s: str) -> str:
+    return _require_str(s, "to_lower").lower()
+
+
+def nebula_trim(s: str) -> str:
+    return _require_str(s, "trim").strip()
+
+
+def nebula_replace(s: str, from_: str, to: str) -> str:
+    return _require_str(s, "replace").replace(
+        _require_str(from_, "replace"), _require_str(to, "replace")
+    )
 
 
 def _is_int(value) -> bool:

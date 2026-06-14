@@ -64,3 +64,59 @@ returns = "Float"
 name = "float_to_int"
 params = [{ name = "f", type = "Float" }]
 returns = "Int"
+
+# String operations. All indices and lengths are in Unicode code points, and
+# both backends (interpreter and Python) produce identical results.
+
+[[builtin]]
+name = "substr"
+params = [
+  { name = "s", type = "Str" },
+  { name = "start", type = "Int" },
+  { name = "end", type = "Int" },
+]
+returns = "Str"
+
+[[builtin]]
+name = "contains"
+params = [{ name = "s", type = "Str" }, { name = "needle", type = "Str" }]
+returns = "Bool"
+
+[[builtin]]
+name = "index_of"
+params = [{ name = "s", type = "Str" }, { name = "needle", type = "Str" }]
+returns = "Int"
+
+[[builtin]]
+name = "starts_with"
+params = [{ name = "s", type = "Str" }, { name = "prefix", type = "Str" }]
+returns = "Bool"
+
+[[builtin]]
+name = "ends_with"
+params = [{ name = "s", type = "Str" }, { name = "suffix", type = "Str" }]
+returns = "Bool"
+
+[[builtin]]
+name = "to_upper"
+params = [{ name = "s", type = "Str" }]
+returns = "Str"
+
+[[builtin]]
+name = "to_lower"
+params = [{ name = "s", type = "Str" }]
+returns = "Str"
+
+[[builtin]]
+name = "trim"
+params = [{ name = "s", type = "Str" }]
+returns = "Str"
+
+[[builtin]]
+name = "replace"
+params = [
+  { name = "s", type = "Str" },
+  { name = "from", type = "Str" },
+  { name = "to", type = "Str" },
+]
+returns = "Str"
