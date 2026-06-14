@@ -1,3 +1,14 @@
+Metadata-Version: 2.4
+Name: nebula-runtime
+Version: 0.1.0
+Summary: Runtime shim for Nebula's Python backend (nebula compile --target python).
+License: MIT
+Project-URL: Homepage, https://github.com/PeytonNowlin/Nebula
+Project-URL: Repository, https://github.com/PeytonNowlin/Nebula
+Keywords: nebula,transpiler,agents,codegen
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
 # nebula-runtime
 
 Runtime shim for [Nebula](https://github.com/PeytonNowlin/Nebula)'s Python
@@ -22,11 +33,3 @@ pip install ./python                # from a checkout of this repo
 With the package installed, compiled modules resolve `from nebula_runtime import …`
 from the environment, and the vendored `dist/nebula_runtime/` directory can be
 removed. See [`docs/author-in-nebula-ship-as-python.md`](../docs/author-in-nebula-ship-as-python.md).
-
-## Publishing
-
-[`.github/workflows/publish-runtime.yml`](../.github/workflows/publish-runtime.yml)
-builds the sdist + wheel and publishes to PyPI via Trusted Publishing on a
-published GitHub Release (or manual dispatch). One-time setup: register this repo
-as a [trusted publisher](https://docs.pypi.org/trusted-publishers/) on the PyPI
-`nebula-runtime` project. Build locally with `python -m build python/`.

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "compile-record.schema.json",
+  "title": "NebulaCompileRecord",
+  "description": "The JSON object printed on stdout by `nebula compile --target <t> --out <dir> --json`. Describes the emitted deployment artifact so an agent or pipeline can locate and run it without parsing human output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["target", "out_dir", "entry_module", "modules_emitted"],
+  "properties": {
+    "target": {
+      "type": "string",
+      "enum": ["python"],
+      "description": "Compile target. Currently only `python`."
+    },
+    "out_dir": {
+      "type": "string",
+      "description": "Directory the package was written to (the `--out` argument)."
+    },
+    "entry_module": {
+      "type": "string",
+      "description": "Path to the runnable entry module — `python <entry_module>` runs the program."
+    },
+    "modules_emitted": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of `.py` modules emitted (one per `.neb` file in the import graph)."
+    }
+  },
+  "examples": [
+    {
+      "target": "python",
+      "out_dir": "dist/",
+      "entry_module": "dist/examples/import_demo.py",
+      "modules_emitted": 2
+    }
+  ]
+}

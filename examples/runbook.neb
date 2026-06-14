@@ -1,14 +1,10 @@
--- Deploy readiness runbook: retry health checks via probes, log each attempt,
--- and notify ops when the service becomes ready or retries are exhausted.
-
-sector checks {
-  fn is_ready(attempt: Int) -> Bool {
-    return attempt eq 3;
-  }
-}
+-- Deploy readiness runbook: poll a health endpoint via a probe that RETURNS an
+-- HTTP-like status code, retry until ready (200) or attempts are exhausted, log
+-- each attempt, and notify ops with the outcome. Readiness comes from the
+-- probe's captured return value — no simulated state.
 
 mission main {
-  probe check_health(attempt: Str) -> Void;
+  probe fetch_status(attempt: Int) -> Int;
   probe log(level: Str, message: Str) -> Void;
   probe notify(channel: Str, message: Str) -> Void;
 
@@ -19,10 +15,10 @@ mission main {
   telemetry
     while attempts lt max_attempts do
       set attempts = attempts plus 1;
-      call check_health(attempt: int_to_str(attempts));
-      call log(level: "info", message: int_to_str(attempts));
+      let status: Int = call fetch_status(attempt: attempts);
+      call log(level: "info", message: int_to_str(status));
 
-      if checks.is_ready(attempts) then
+      if status eq 200 then
         set succeeded = true;
         set attempts = max_attempts;
       end

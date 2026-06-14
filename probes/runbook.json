@@ -6,9 +6,9 @@
     }
   },
   "probes": {
-    "check_health": {
+    "fetch_status": {
       "kind": "command",
-      "command": ["python3", "scripts/runbook_check_health.py"]
+      "command": ["python3", "scripts/runbook_fetch_status.py"]
     },
     "log": {
       "kind": "jsonl"

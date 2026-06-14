@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use nebula_ir::lower;
 use nebula_runtime::Runtime;
@@ -11,12 +12,13 @@ fn run_with_telemetry(src: &str) -> (Vec<JsonValue>, Vec<String>) {
     let typed = typecheck(&program).expect("typecheck");
     let ir = lower(&typed).expect("lower");
 
+    // Unique per invocation: a process-wide counter avoids the collisions that a
+    // timestamp suffix hits when tests run in parallel and land on the same nanos.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let telemetry_path = std::env::temp_dir().join(format!(
-        "nebula-telemetry-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos()
+        "nebula-telemetry-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = fs::remove_file(&telemetry_path);
 

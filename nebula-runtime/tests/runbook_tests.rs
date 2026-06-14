@@ -81,7 +81,7 @@ fn test_temp(stem: &str, suffix: &str) -> PathBuf {
 }
 
 fn write_runbook_manifest(stem: &str, probe_log: &PathBuf, mock_mcp: &PathBuf) -> PathBuf {
-    let health_script = workspace_root().join("scripts/runbook_check_health.py");
+    let health_script = workspace_root().join("scripts/runbook_fetch_status.py");
     let manifest_path = std::env::temp_dir().join(format!("nebula-runbook-{stem}-manifest.json"));
     fs::write(
         &manifest_path,
@@ -94,7 +94,7 @@ fn write_runbook_manifest(stem: &str, probe_log: &PathBuf, mock_mcp: &PathBuf) -
     }}
   }},
   "probes": {{
-    "check_health": {{
+    "fetch_status": {{
       "kind": "command",
       "command": ["python3", "{}"]
     }},
@@ -226,7 +226,7 @@ fn runbook_happy_path_records_telemetry_and_probe_events() {
     let last: JsonValue = serde_json::from_str(health_lines.last().expect("last health line"))
         .expect("parse health line");
     assert_eq!(last["attempt"], 3);
-    assert_eq!(last["status"], "healthy");
+    assert_eq!(last["status"], 200, "ready attempt should return HTTP 200");
 
     std::env::remove_var("NEBULA_RUNBOOK_HEALTH_LOG");
 }
@@ -240,47 +240,17 @@ fn runbook_failure_path_notifies_after_retries() {
     let mock_mcp = workspace_root().join("scripts/mcp_mock_stdio.py");
     let manifest_path = write_runbook_manifest("failure", &probe_log, &mock_mcp);
 
-    let src = r#"
-sector checks {
-  fn is_ready(attempt: Int) -> Bool {
-    return false;
-  }
-}
+    // Force the service to never become ready within max_attempts so the
+    // retries-exhausted path runs (fetch_status returns 503 every attempt).
+    std::env::set_var("NEBULA_RUNBOOK_READY_AT", "99");
 
-mission main {
-  probe check_health(attempt: Str) -> Void;
-  probe log(level: Str, message: Str) -> Void;
-  probe notify(channel: Str, message: Str) -> Void;
-
-  let max_attempts: Int = 3;
-  let mut attempts: Int = 0;
-  let mut succeeded: Bool = false;
-
-  telemetry
-    while attempts lt max_attempts do
-      set attempts = attempts plus 1;
-      call check_health(attempt: int_to_str(attempts));
-      call log(level: "info", message: int_to_str(attempts));
-
-      if checks.is_ready(attempts) then
-        set succeeded = true;
-        set attempts = max_attempts;
-      end
-    end
-  end
-
-  if succeeded then
-    call notify(channel: "ops", message: "healthy");
-    print("ready");
-  else
-    call notify(channel: "ops", message: "unhealthy after retries");
-    print("failed");
-  end
-}
-"#;
+    // The shipped example, run as-is: readiness is driven by the captured
+    // fetch_status return value, not simulated state.
+    let src = fs::read_to_string(workspace_root().join("examples/runbook.neb"))
+        .expect("read runbook example");
 
     let ir = Host::new()
-        .try_compile_source(src, None)
+        .try_compile_source(&src, None)
         .expect("compile failure runbook")
         .ir;
     let mut runtime = Runtime::new(&ir)
@@ -288,6 +258,8 @@ mission main {
         .with_probe_manifest(&manifest_path, None)
         .expect("load manifest");
     runtime.run(&ir).expect("run failure runbook");
+
+    std::env::remove_var("NEBULA_RUNBOOK_READY_AT");
 
     assert_eq!(runtime.take_printed(), vec!["failed"]);
     let probe_source = fs::read_to_string(&probe_log).expect("read probe log");

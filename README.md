@@ -114,7 +114,7 @@ python dist/examples/import_demo.py
 }
 ```
 
-Other schemas live under [`schemas/`](schemas/): diagnostics, telemetry events, probe JSONL, probe manifests, and Nebula value encoding.
+Other schemas live under [`schemas/`](schemas/): diagnostics, compile records, telemetry events, probe JSONL, probe manifests, and Nebula value encoding.
 
 ## Language overview
 

@@ -44,9 +44,14 @@ Rules that most often trip up generation:
 ## Shipping
 
 ```bash
-nebula compile program.neb --target python --out dist/
+python scripts/nebula_agent.py ship program.neb --out dist/   # check, then compile
+# or directly:
+nebula compile program.neb --target python --out dist/ --json
 ```
 
-Produces a self-contained Python package: run `python dist/program.py`, or import
-it and call sector functions from Python (native return types). Full path:
+`ship` validates and, if clean, compiles — returning `{"stage":"compile",
+"ready":true,"record":{target,out_dir,entry_module,modules_emitted}}` (or the
+`check` envelope if there are diagnostics to fix first). The output is a
+self-contained Python package: run `python dist/program.py`, or import it and
+call sector functions from Python (native return types). Full path:
 [`docs/author-in-nebula-ship-as-python.md`](docs/author-in-nebula-ship-as-python.md).

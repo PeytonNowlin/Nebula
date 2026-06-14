@@ -105,6 +105,25 @@ def run(
         }
 
 
+def compile_to(
+    path: str,
+    out: str,
+    *,
+    target: str = "python",
+    probes: Optional[str] = None,
+) -> dict[str, Any]:
+    """Compile `path` to a deployment package and return the compile record
+    (`target`, `out_dir`, `entry_module`, `modules_emitted`) — matching
+    schemas/compile-record.schema.json. Raises on compile failure."""
+    cmd = _nebula_bin() + ["compile", str(path), "--target", target, "--out", str(out), "--json"]
+    if probes:
+        cmd += ["--probes", str(probes)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "compile failed")
+    return json.loads(proc.stdout)
+
+
 def author_loop(path: str, *, probes: Optional[str] = None) -> dict[str, Any]:
     """One iteration of the agent loop, as a single envelope:
 
@@ -126,13 +145,28 @@ def author_loop(path: str, *, probes: Optional[str] = None) -> dict[str, Any]:
     }
 
 
+def ship(path: str, out: str, *, probes: Optional[str] = None) -> dict[str, Any]:
+    """Validate then compile — the deploy half of the loop, as one envelope:
+
+    - not ready: ``{"stage": "check", "ready": False, "diagnostics": [...]}``
+    - shipped:   ``{"stage": "compile", "ready": True, "record": {...}}``
+    """
+    diags = check(path, probes=probes)
+    if diags:
+        return {"stage": "check", "ready": False, "diagnostics": diags}
+    record = compile_to(path, out, probes=probes)
+    return {"stage": "compile", "ready": True, "record": record}
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Nebula authoring-loop harness")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("check", "run", "loop"):
+    for name in ("check", "run", "loop", "compile", "ship"):
         p = sub.add_parser(name)
         p.add_argument("file")
         p.add_argument("--probes")
+        if name in ("compile", "ship"):
+            p.add_argument("--out", required=True)
     args = parser.parse_args(argv)
 
     if args.cmd == "check":
@@ -143,6 +177,14 @@ def _main(argv: Optional[list[str]] = None) -> int:
         record = run(args.file, probes=args.probes)
         print(json.dumps(record))
         return int(record.get("exit", 1) or 0)
+    if args.cmd == "compile":
+        record = compile_to(args.file, args.out, probes=args.probes)
+        print(json.dumps(record))
+        return 0
+    if args.cmd == "ship":
+        step = ship(args.file, args.out, probes=args.probes)
+        print(json.dumps(step))
+        return 0 if step["ready"] else 1
     # loop
     step = author_loop(args.file, probes=args.probes)
     print(json.dumps(step))

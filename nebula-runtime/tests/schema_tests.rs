@@ -279,3 +279,30 @@ fn nebula_value_schema_accepts_struct_and_option_wrappers() {
             .unwrap_or_else(|_| panic!("value should validate: {sample}"));
     }
 }
+
+#[test]
+fn compile_record_schema_matches_compile_json_output() {
+    let validator = load_schema("compile-record.schema.json");
+    let record = serde_json::json!({
+        "target": "python",
+        "out_dir": "dist/",
+        "entry_module": "dist/examples/import_demo.py",
+        "modules_emitted": 2
+    });
+    validator
+        .validate(&record)
+        .expect("compile record should validate");
+
+    let bad = [
+        serde_json::json!({ "target": "python", "out_dir": "d", "entry_module": "e" }), // missing modules_emitted
+        serde_json::json!({ "target": "rust", "out_dir": "d", "entry_module": "e", "modules_emitted": 1 }), // bad target
+        serde_json::json!({ "target": "python", "out_dir": "d", "entry_module": "e", "modules_emitted": 0 }), // < 1
+        serde_json::json!({ "target": "python", "out_dir": "d", "entry_module": "e", "modules_emitted": 1, "extra": true }),
+    ];
+    for sample in &bad {
+        assert!(
+            validator.validate(sample).is_err(),
+            "schema should reject malformed compile record: {sample}"
+        );
+    }
+}

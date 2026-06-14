@@ -54,3 +54,20 @@ fn harness_loop_surfaces_diagnostics_for_a_broken_program() {
     assert_eq!(v["diagnostics"][0]["code"], "NEB-T002");
     assert_eq!(code, 1);
 }
+
+#[test]
+fn harness_ship_validates_then_compiles() {
+    let out = std::env::temp_dir().join("nebula-harness-ship");
+    let _ = std::fs::remove_dir_all(&out);
+    let out_str = out.to_string_lossy().to_string();
+
+    let (v, code) = harness(&["ship", "examples/hello.neb", "--out", &out_str]);
+    assert_eq!(v["stage"], "compile");
+    assert_eq!(v["ready"], true);
+    assert_eq!(v["record"]["target"], "python");
+    assert_eq!(code, 0);
+    assert!(
+        out.join("hello.py").exists(),
+        "ship should emit the entry module"
+    );
+}

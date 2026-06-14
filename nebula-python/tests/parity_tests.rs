@@ -256,6 +256,55 @@ fn parity_io_agent_bundle_probes() {
     assert_eq!(interpreter, "dry-run", "unexpected io_agent output");
 }
 
+/// Real-program parity: examples/runbook.neb captures a command-probe return
+/// value (fetch_status -> Int), logs via jsonl, and notifies via MCP. Both
+/// backends run from the workspace root so the manifest's relative script paths
+/// resolve, and both reach the "ready" outcome.
+#[test]
+fn parity_runbook_fetch_status() {
+    let root = workspace_root();
+    let file = root.join("examples/runbook.neb");
+    let manifest = root.join("probes/runbook.json");
+    let out_dir = std::env::temp_dir().join("nebula-py-parity-runbook");
+    let _ = fs::remove_dir_all(&out_dir);
+
+    let interpreter = capture_interpreter_stdout(&file, Some(&manifest));
+
+    let source = fs::read_to_string(&file).expect("read source");
+    let program = parse(&source).expect("parse");
+    let loaded = load_workspace(&file, program).expect("load");
+    let typed = typecheck(&loaded.merged).expect("typecheck");
+    let ir = lower(&typed).expect("lower");
+    let result = emit_workspace(
+        &loaded,
+        &ir,
+        &EmitOptions {
+            out_dir: out_dir.clone(),
+            entry_path: file.clone(),
+            probe_manifest: Some(manifest.clone()),
+            telemetry_path: None,
+        },
+    )
+    .expect("emit");
+    let output = Command::new("python3")
+        .arg(&result.entry_module)
+        .current_dir(&root)
+        .output()
+        .expect("run python");
+    assert!(
+        output.status.success(),
+        "python runbook failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let python = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    assert_eq!(
+        interpreter, python,
+        "runbook.neb diverged between interpreter and Python backend"
+    );
+    assert_eq!(interpreter, "ready", "unexpected runbook output");
+}
+
 #[test]
 fn parity_split_and_join() {
     assert_parity(
