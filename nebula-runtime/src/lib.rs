@@ -49,6 +49,7 @@ pub struct Runtime {
     env: HashMap<String, Value>,
     functions: HashMap<String, nebula_ir::IrFunction>,
     probes: HashMap<String, nebula_ir::ProbeInfo>,
+    current_sector: Option<String>,
     telemetry_path: Option<String>,
     telemetry_enabled: bool,
 }
@@ -56,9 +57,10 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(program: &IrProgram) -> Self {
         let mut functions = HashMap::new();
-        for sector in program.sectors.values() {
-            for (name, func) in &sector.functions {
-                functions.insert(name.clone(), func.clone());
+        for (sector_name, sector) in &program.sectors {
+            for func in sector.functions.values() {
+                functions.insert(func.qualified_name.clone(), func.clone());
+                let _ = sector_name;
             }
         }
 
@@ -66,6 +68,7 @@ impl Runtime {
             env: HashMap::new(),
             functions,
             probes: program.probes.clone(),
+            current_sector: None,
             telemetry_path: None,
             telemetry_enabled: false,
         }
@@ -137,14 +140,16 @@ impl Runtime {
                 Ok(None)
             }
             IrStmt::ProbeCall { name, args } => {
-                if !self.probes.contains_key(name) {
+                let resolved = self.resolve_probe(name);
+                if !self.probes.contains_key(&resolved) {
                     return Err(RuntimeError::UndefinedProbe { name: name.clone() });
                 }
+                let name = resolved;
                 let mut evaluated = HashMap::new();
                 for (k, v) in args {
                     evaluated.insert(k.clone(), self.eval_expr(v)?);
                 }
-                self.log_telemetry("probe", name);
+                self.log_telemetry("probe", &name);
                 println!("[probe:{name}] {evaluated:?}");
                 Ok(None)
             }
@@ -192,9 +197,10 @@ impl Runtime {
                     return eval_builtin(name, args, self);
                 }
 
+                let resolved = self.resolve_function(name);
                 let func = self
                     .functions
-                    .get(name)
+                    .get(&resolved)
                     .cloned()
                     .ok_or(RuntimeError::Error {
                         message: format!("undefined function `{name}`"),
@@ -211,7 +217,8 @@ impl Runtime {
                     arg_values.push(self.eval_expr(arg)?);
                 }
 
-                let saved = std::mem::take(&mut self.env);
+                let saved_env = std::mem::take(&mut self.env);
+                let saved_sector = self.current_sector.replace(func.sector.clone());
                 for (param, value) in func.params.iter().zip(arg_values) {
                     self.env.insert(param.clone(), value);
                 }
@@ -224,7 +231,8 @@ impl Runtime {
                     }
                 }
 
-                self.env = saved;
+                self.env = saved_env;
+                self.current_sector = saved_sector;
                 Ok(result)
             }
             IrExpr::List(items) => {
@@ -273,6 +281,36 @@ impl Runtime {
                 }
             }
         }
+    }
+
+    fn resolve_function(&self, name: &str) -> String {
+        if self.functions.contains_key(name) {
+            return name.to_string();
+        }
+        if !name.contains('.') {
+            if let Some(sector) = &self.current_sector {
+                let qualified = format!("{sector}.{name}");
+                if self.functions.contains_key(&qualified) {
+                    return qualified;
+                }
+            }
+        }
+        name.to_string()
+    }
+
+    fn resolve_probe(&self, name: &str) -> String {
+        if self.probes.contains_key(name) {
+            return name.to_string();
+        }
+        if !name.contains('.') {
+            if let Some(sector) = &self.current_sector {
+                let qualified = format!("{sector}.{name}");
+                if self.probes.contains_key(&qualified) {
+                    return qualified;
+                }
+            }
+        }
+        name.to_string()
     }
 
     fn log_telemetry(&self, step: &str, detail: &str) {

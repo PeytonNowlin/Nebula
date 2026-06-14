@@ -113,7 +113,27 @@ import "../std/math.neb";
 - Circular imports are a load error (`NEB-L002`).
 - Import statements are resolved before type checking and removed from the merged program.
 
-## 6. Semantics
+## 6. Sector Namespacing
+
+Symbols defined inside a `sector` are qualified as `sector.symbol`:
+
+```nebula
+sector math {
+  fn double(n: Int) -> Int { return n times 2; }
+}
+
+mission main {
+  print(int_to_str(math.double(10)));
+}
+```
+
+- Functions, structs, and sector probes are stored as `sector.name`
+- From `mission`, sector symbols must be **qualified** (`math.double`)
+- Inside a sector function, same-sector symbols may be used **unqualified** (`double`)
+- Builtins (`print`, `len`, `push`, etc.) and mission-level probes remain unqualified
+- Types may be written as `geo.Point` or unqualified `Point` inside the `geo` sector
+
+## 7. Semantics
 
 - Bindings are immutable unless declared with `mut`.
 - `set` requires the target binding to be `mut`.
@@ -122,7 +142,7 @@ import "../std/math.neb";
 - `telemetry` blocks append structured JSONL traces for each statement executed within.
 - `emit` and `return` both exit the current function with a value.
 
-## 7. Error Codes
+## 8. Error Codes
 
 | Prefix | Category |
 |--------|----------|
@@ -132,7 +152,7 @@ import "../std/math.neb";
 | `NEB-P` | Probe |
 | `NEB-L` | Module load / import |
 
-## 8. Builtins
+## 9. Builtins
 
 Provided by the runtime standard library:
 

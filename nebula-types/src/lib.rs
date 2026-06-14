@@ -1,8 +1,12 @@
+mod resolve;
+
 use std::collections::HashMap;
 
 use miette::Diagnostic;
 use nebula_ast::*;
 use thiserror::Error;
+
+use resolve::{qualify, resolve_symbol};
 
 #[derive(Debug, Clone, Error, Diagnostic)]
 pub enum TypeError {
@@ -58,20 +62,26 @@ pub struct TypedProgram {
 
 #[derive(Debug, Clone)]
 pub struct FnInfo {
+    pub sector: String,
     pub name: String,
+    pub qualified_name: String,
     pub params: Vec<(String, Type)>,
     pub return_type: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructInfo {
+    pub sector: String,
     pub name: String,
+    pub qualified_name: String,
     pub fields: HashMap<String, Type>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ProbeInfo {
+    pub sector: Option<String>,
     pub name: String,
+    pub qualified_name: String,
     pub params: Vec<(String, Type)>,
     pub return_type: Type,
 }
@@ -114,52 +124,88 @@ struct Checker {
     structs: HashMap<String, StructInfo>,
     probes: HashMap<String, ProbeInfo>,
     has_main: bool,
+    current_sector: Option<String>,
 }
 
 impl Checker {
     fn new() -> Self {
         let mut functions = HashMap::new();
-        functions.insert(
-            "print".into(),
-            FnInfo {
-                name: "print".into(),
-                params: vec![("value".into(), Type::Str)],
-                return_type: Type::Void,
-            },
-        );
-        functions.insert(
-            "str_to_int".into(),
-            FnInfo {
-                name: "str_to_int".into(),
-                params: vec![("s".into(), Type::Str)],
-                return_type: Type::Int,
-            },
-        );
-        functions.insert(
-            "int_to_str".into(),
-            FnInfo {
-                name: "int_to_str".into(),
-                params: vec![("n".into(), Type::Int)],
-                return_type: Type::Str,
-            },
-        );
+        for (name, params, ret) in [
+            ("print", vec![("value".into(), Type::Str)], Type::Void),
+            ("str_to_int", vec![("s".into(), Type::Str)], Type::Int),
+            ("int_to_str", vec![("n".into(), Type::Int)], Type::Str),
+        ] {
+            functions.insert(
+                name.into(),
+                FnInfo {
+                    sector: String::new(),
+                    name: name.into(),
+                    qualified_name: name.into(),
+                    params,
+                    return_type: ret,
+                },
+            );
+        }
 
         Self {
             functions,
             structs: HashMap::new(),
             probes: HashMap::new(),
             has_main: false,
+            current_sector: None,
+        }
+    }
+
+    fn with_sector<R>(&mut self, sector: &str, f: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = self.current_sector.replace(sector.to_string());
+        let result = f(self);
+        self.current_sector = previous;
+        result
+    }
+
+    fn resolve_fn(&self, name: &str) -> Option<String> {
+        resolve_symbol(name, self.current_sector.as_deref(), &self.functions)
+    }
+
+    fn resolve_struct(&self, name: &str) -> Option<String> {
+        resolve_symbol(name, self.current_sector.as_deref(), &self.structs)
+    }
+
+    fn resolve_probe(&self, name: &str) -> Option<String> {
+        resolve_symbol(name, self.current_sector.as_deref(), &self.probes)
+    }
+
+    fn resolve_type_name(&self, name: &str) -> String {
+        resolve_symbol(name, self.current_sector.as_deref(), &self.structs)
+            .unwrap_or_else(|| name.to_string())
+    }
+
+    fn resolve_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Named(name) => Type::Named(self.resolve_type_name(name)),
+            Type::List(inner) => Type::List(Box::new(self.resolve_type(inner))),
+            Type::Map(k, v) => Type::Map(
+                Box::new(self.resolve_type(k)),
+                Box::new(self.resolve_type(v)),
+            ),
+            Type::Option(inner) => Type::Option(Box::new(self.resolve_type(inner))),
+            Type::Fn(params, ret) => Type::Fn(
+                params.iter().map(|p| self.resolve_type(p)).collect(),
+                Box::new(self.resolve_type(ret)),
+            ),
+            _ => ty.clone(),
         }
     }
 
     fn collect_top_level(&mut self, item: &TopLevel, _errors: &mut Vec<TypeError>) {
         match item {
             TopLevel::Sector(sector) => {
+                let sector_name = sector.node.name.node.clone();
                 for sitem in &sector.node.items {
                     match sitem {
-                        SectorItem::Fn(f) => self.collect_fn(&f.node),
-                        SectorItem::Struct(s) => self.collect_struct(&s.node),
-                        SectorItem::Probe(p) => self.collect_probe(&p.node),
+                        SectorItem::Fn(f) => self.collect_fn(&f.node, &sector_name),
+                        SectorItem::Struct(s) => self.collect_struct(&s.node, &sector_name),
+                        SectorItem::Probe(p) => self.collect_probe(&p.node, Some(&sector_name)),
                     }
                 }
             }
@@ -169,7 +215,7 @@ impl Checker {
                 }
                 for mitem in &mission.node.items {
                     if let MissionItem::Probe(p) = mitem {
-                        self.collect_probe(&p.node);
+                        self.collect_probe(&p.node, None);
                     }
                 }
             }
@@ -177,43 +223,60 @@ impl Checker {
         }
     }
 
-    fn collect_fn(&mut self, f: &FnDecl) {
+    fn collect_fn(&mut self, f: &FnDecl, sector: &str) {
         let name = f.name.node.clone();
+        let qualified_name = qualify(sector, &name);
         let params = f
             .params
             .iter()
             .map(|p| (p.node.name.node.clone(), p.node.ty.node.clone()))
             .collect();
         self.functions.insert(
-            name.clone(),
+            qualified_name.clone(),
             FnInfo {
+                sector: sector.to_string(),
                 name,
+                qualified_name,
                 params,
                 return_type: f.return_type.node.clone(),
             },
         );
     }
 
-    fn collect_struct(&mut self, s: &StructDecl) {
+    fn collect_struct(&mut self, s: &StructDecl, sector: &str) {
         let name = s.name.node.clone();
+        let qualified_name = qualify(sector, &name);
         let mut fields = HashMap::new();
         for f in &s.fields {
             fields.insert(f.node.name.node.clone(), f.node.ty.node.clone());
         }
-        self.structs.insert(name.clone(), StructInfo { name, fields });
+        self.structs.insert(
+            qualified_name.clone(),
+            StructInfo {
+                sector: sector.to_string(),
+                name,
+                qualified_name,
+                fields,
+            },
+        );
     }
 
-    fn collect_probe(&mut self, p: &ProbeDecl) {
+    fn collect_probe(&mut self, p: &ProbeDecl, sector: Option<&str>) {
         let name = p.name.node.clone();
+        let qualified_name = sector
+            .map(|s| qualify(s, &name))
+            .unwrap_or_else(|| name.clone());
         let params = p
             .params
             .iter()
             .map(|param| (param.node.name.node.clone(), param.node.ty.node.clone()))
             .collect();
         self.probes.insert(
-            name.clone(),
+            qualified_name.clone(),
             ProbeInfo {
+                sector: sector.map(str::to_string),
                 name,
+                qualified_name,
                 params,
                 return_type: p.return_type.node.clone(),
             },
@@ -223,9 +286,12 @@ impl Checker {
     fn check_top_level(&mut self, item: &TopLevel, errors: &mut Vec<TypeError>) {
         match item {
             TopLevel::Sector(sector) => {
+                let sector_name = sector.node.name.node.clone();
                 for sitem in &sector.node.items {
                     if let SectorItem::Fn(f) = sitem {
-                        self.check_fn(&f.node, errors);
+                        self.with_sector(&sector_name, |checker| {
+                            checker.check_fn(&f.node, errors);
+                        });
                     }
                 }
             }
@@ -249,7 +315,7 @@ impl Checker {
         for p in &f.params {
             scope.define(
                 p.node.name.node.clone(),
-                p.node.ty.node.clone(),
+                self.resolve_type(&p.node.ty.node),
                 false,
             );
         }
@@ -272,15 +338,16 @@ impl Checker {
                 ty,
                 value,
             } => {
+                let resolved_ty = self.resolve_type(&ty.node);
                 let value_ty = self.check_expr(&value.node, scope, errors);
-                if !types_equal(&ty.node, &value_ty) {
+                if !types_equal(&resolved_ty, &value_ty) {
                     errors.push(TypeError::Mismatch {
-                        expected: ty.node.display(),
+                        expected: resolved_ty.display(),
                         found: value_ty.display(),
                         span: value.span.clone(),
                     });
                 }
-                scope.define(name.node.clone(), ty.node.clone(), *mutable);
+                scope.define(name.node.clone(), resolved_ty, *mutable);
             }
             Stmt::Set { name, value } => {
                 let binding = scope.get(&name.node).map(|(ty, mutable)| (ty.clone(), *mutable));
@@ -358,8 +425,10 @@ impl Checker {
                 self.check_expr(&expr.node, scope, errors);
             }
             Stmt::Call { name, args } => {
-                if let Some(probe) = self.probes.get(&name.node).cloned() {
-                    self.check_probe_call(&probe, args, name.span.clone(), scope, errors);
+                if let Some(resolved) = self.resolve_probe(&name.node) {
+                    if let Some(probe) = self.probes.get(&resolved).cloned() {
+                        self.check_probe_call(&probe, args, name.span.clone(), scope, errors);
+                    }
                 } else {
                     errors.push(TypeError::UndefinedProbe {
                         name: name.node.clone(),
@@ -572,33 +641,34 @@ impl Checker {
                 if let Some(ret) = self.check_builtin_call(name, args, scope, errors) {
                     return ret;
                 }
-                if let Some(fn_info) = self.functions.get(name).cloned() {
-                    if fn_info.params.len() != args.len() {
-                        errors.push(TypeError::Mismatch {
-                            expected: format!("{} arguments", fn_info.params.len()),
-                            found: format!("{} arguments", args.len()),
-                            span: callee.span.clone(),
-                        });
-                    }
-                    for (i, (expected, arg)) in fn_info.params.iter().zip(args.iter()).enumerate() {
-                        let arg_ty = self.check_expr_inner(&arg.node, scope, errors);
-                        if !types_equal(&expected.1, &arg_ty) {
+                let resolved = self.resolve_fn(name);
+                if let Some(key) = resolved {
+                    if let Some(fn_info) = self.functions.get(&key).cloned() {
+                        if fn_info.params.len() != args.len() {
                             errors.push(TypeError::Mismatch {
-                                expected: expected.1.display(),
-                                found: arg_ty.display(),
-                                span: arg.span.clone(),
+                                expected: format!("{} arguments", fn_info.params.len()),
+                                found: format!("{} arguments", args.len()),
+                                span: callee.span.clone(),
                             });
                         }
-                        let _ = i;
+                        for (expected, arg) in fn_info.params.iter().zip(args.iter()) {
+                            let arg_ty = self.check_expr_inner(&arg.node, scope, errors);
+                            if !types_equal(&expected.1, &arg_ty) {
+                                errors.push(TypeError::Mismatch {
+                                    expected: expected.1.display(),
+                                    found: arg_ty.display(),
+                                    span: arg.span.clone(),
+                                });
+                            }
+                        }
+                        return fn_info.return_type;
                     }
-                    fn_info.return_type
-                } else {
-                    errors.push(TypeError::UndefinedFn {
-                        name: name.clone(),
-                        span: callee.span.clone(),
-                    });
-                    Type::Void
                 }
+                errors.push(TypeError::UndefinedFn {
+                    name: name.clone(),
+                    span: callee.span.clone(),
+                });
+                Type::Void
             }
             Expr::List(items) => {
                 if items.is_empty() {
@@ -626,7 +696,9 @@ impl Checker {
                 Type::Map(Box::new(key_ty), Box::new(val_ty))
             }
             Expr::StructLit { name, fields } => {
-                if let Some(info) = self.structs.get(&name.node).cloned() {
+                let resolved = self.resolve_struct(&name.node);
+                if let Some(key) = resolved.and_then(|k| self.structs.get(&k).cloned()) {
+                    let info = key;
                     for field in fields {
                         if let Some(expected) = info.fields.get(&field.node.name.node) {
                             let actual = self.check_expr_inner(&field.node.value.node, scope, errors);
@@ -645,7 +717,7 @@ impl Checker {
                             });
                         }
                     }
-                    Type::Named(name.node.clone())
+                    Type::Named(info.qualified_name.clone())
                 } else {
                     errors.push(TypeError::UndefinedStruct {
                         name: name.node.clone(),
@@ -655,6 +727,28 @@ impl Checker {
                 }
             }
             Expr::FieldAccess { object, field } => {
+                if let Some(binding) = scope.get(&object.node) {
+                    if let Type::Named(struct_name) = &binding.0 {
+                        if let Some(info) = self.structs.get(struct_name) {
+                            if let Some(ty) = info.fields.get(&field.node) {
+                                return ty.clone();
+                            }
+                            errors.push(TypeError::UnknownField {
+                                struct_name: struct_name.clone(),
+                                field: field.node.clone(),
+                                span: field.span.clone(),
+                            });
+                            return Type::Void;
+                        }
+                    }
+                    errors.push(TypeError::Mismatch {
+                        expected: "struct value".into(),
+                        found: binding.0.display(),
+                        span: object.span.clone(),
+                    });
+                    return Type::Void;
+                }
+
                 let struct_name = &object.node;
                 if let Some(info) = self.structs.get(struct_name) {
                     if let Some(ty) = info.fields.get(&field.node) {

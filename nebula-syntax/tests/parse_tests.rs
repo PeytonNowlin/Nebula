@@ -36,7 +36,7 @@ sector geo {
 }
 
 mission main {
-  let p: Point = origin();
+  let p: geo.Point = geo.origin();
 }
 "#;
     parse(src).expect("sector with struct should parse");

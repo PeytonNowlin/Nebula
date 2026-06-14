@@ -20,7 +20,7 @@ mission main {
   let mut i: Int = 1;
 
   while i le 20 do {
-    print(fizzbuzz(i));
+    print(math.fizzbuzz(i));
     set i = i plus 1;
   }
 }

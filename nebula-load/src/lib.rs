@@ -77,21 +77,21 @@ impl SymbolRegistry {
             match item {
                 SectorItem::Fn(f) => register_symbol(
                     "function",
-                    &f.node.name.node,
+                    &format!("{sector_name}.{}", f.node.name.node),
                     f.node.name.span.clone(),
                     source,
                     &mut self.functions,
                 )?,
                 SectorItem::Struct(s) => register_symbol(
                     "struct",
-                    &s.node.name.node,
+                    &format!("{sector_name}.{}", s.node.name.node),
                     s.node.name.span.clone(),
                     source,
                     &mut self.structs,
                 )?,
                 SectorItem::Probe(p) => register_symbol(
                     "probe",
-                    &p.node.name.node,
+                    &format!("{sector_name}.{}", p.node.name.node),
                     p.node.name.span.clone(),
                     source,
                     &mut self.probes,

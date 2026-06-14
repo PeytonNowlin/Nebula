@@ -27,7 +27,9 @@ pub struct IrSector {
 
 #[derive(Debug, Clone)]
 pub struct IrFunction {
+    pub sector: String,
     pub name: String,
+    pub qualified_name: String,
     pub params: Vec<String>,
     pub body: Vec<IrStmt>,
 }
@@ -121,9 +123,9 @@ pub fn lower(program: &TypedProgram) -> Result<IrProgram, IrError> {
 
     for probe in program.probes.values() {
         probes.insert(
-            probe.name.clone(),
+            probe.qualified_name.clone(),
             ProbeInfo {
-                name: probe.name.clone(),
+                name: probe.qualified_name.clone(),
                 params: probe.params.iter().map(|(n, _)| n.clone()).collect(),
             },
         );
@@ -138,10 +140,8 @@ pub fn lower(program: &TypedProgram) -> Result<IrProgram, IrError> {
                 for sitem in &sector.node.items {
                     match sitem {
                         SectorItem::Fn(f) => {
-                            functions.insert(
-                                f.node.name.node.clone(),
-                                lower_fn(&f.node),
-                            );
+                            let qualified = format!("{name}.{}", f.node.name.node);
+                            functions.insert(qualified, lower_fn(&name, &f.node));
                         }
                         SectorItem::Struct(s) => {
                             let mut fields = HashMap::new();
@@ -190,9 +190,13 @@ pub fn lower(program: &TypedProgram) -> Result<IrProgram, IrError> {
     })
 }
 
-fn lower_fn(f: &FnDecl) -> IrFunction {
+fn lower_fn(sector: &str, f: &FnDecl) -> IrFunction {
+    let name = f.name.node.clone();
+    let qualified_name = format!("{sector}.{name}");
     IrFunction {
-        name: f.name.node.clone(),
+        sector: sector.to_string(),
+        name,
+        qualified_name,
         params: f.params.iter().map(|p| p.node.name.node.clone()).collect(),
         body: f.body.iter().map(|s| lower_stmt(&s.node)).collect(),
     }
