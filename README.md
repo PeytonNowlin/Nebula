@@ -6,6 +6,8 @@
 
 Nebula trades symbolic brevity for machine legibility: operators are keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain speaks JSON — structured diagnostics, AST export, IR export, and run records with stable `NEB-*` error codes.
 
+**Author in Nebula, ship as Python.** Agents iterate in Nebula against `check --json` / `run --json`, then `compile --target python` produces a self-contained package you run in existing Python infrastructure — Nebula is the typed authoring layer, Python is the bytecode. Full path: [**docs/author-in-nebula-ship-as-python.md**](docs/author-in-nebula-ship-as-python.md).
+
 This repository is the reference implementation: a Rust compiler and interpreter with a Python backend, probe host, and in-process embedding API.
 
 **Status:** v0.1 — language and toolchain are experimental but fully tested.

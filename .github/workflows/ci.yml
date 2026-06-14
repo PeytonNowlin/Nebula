@@ -52,3 +52,11 @@ jobs:
 
       - name: Test (Rust unit/integration/e2e + Python parity)
         run: cargo test --all
+
+      # The "author in Nebula, ship as Python" path: compile a program to a
+      # Python package and run the emitted artifact, exactly as a deployment
+      # pipeline would. See docs/author-in-nebula-ship-as-python.md.
+      - name: Build & run Python deployment artifact
+        run: |
+          cargo run --release -- compile examples/import_demo.neb --target python --out dist/
+          python dist/examples/import_demo.py
