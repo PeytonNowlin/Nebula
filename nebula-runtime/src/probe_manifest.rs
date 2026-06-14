@@ -108,12 +108,10 @@ pub struct McpServerReport {
 
 pub fn read_probe_manifest(path: &Path) -> Result<ProbeManifest, RuntimeError> {
     let source = fs::read_to_string(path).map_err(|err| RuntimeError::Error {
-        message: format!("failed to read probe manifest `{}`: {err}", path.display()),
-    })?;
+        message: format!("failed to read probe manifest `{}`: {err}", path.display()), span: 0..0 })?;
     let mut manifest: ProbeManifest = serde_json::from_str(&source).map_err(|err| {
         RuntimeError::Error {
-            message: format!("invalid probe manifest `{}`: {err}", path.display()),
-        }
+            message: format!("invalid probe manifest `{}`: {err}", path.display()), span: 0..0 }
     })?;
     resolve_manifest_paths(&mut manifest, path);
     Ok(manifest)
@@ -315,13 +313,11 @@ pub fn validate_manifest(manifest: &ProbeManifest) -> Result<(), RuntimeError> {
                 return Err(RuntimeError::Error {
                     message: format!(
                         "probe `{name}` uses kind mcp but manifest defines no mcp_servers"
-                    ),
-                });
+                    ), span: 0..0 });
             }
             if !manifest.mcp_servers.contains_key(server) {
                 return Err(RuntimeError::Error {
-                    message: format!("probe `{name}` references unknown MCP server `{server}`"),
-                });
+                    message: format!("probe `{name}` references unknown MCP server `{server}`"), span: 0..0 });
             }
         }
     }
@@ -333,8 +329,7 @@ fn discover_mcp_servers(
 ) -> Result<HashMap<String, McpServerReport>, RuntimeError> {
     let manager = McpConnectionManager::new(manifest.mcp_servers.clone())
         .map_err(|err| RuntimeError::Error {
-            message: err.to_string(),
-        })?;
+            message: err.to_string(), span: 0..0 })?;
 
     let mut reports = HashMap::new();
     for (server_id, config) in &manifest.mcp_servers {

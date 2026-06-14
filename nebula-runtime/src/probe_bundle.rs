@@ -111,8 +111,7 @@ fn required_str_arg(
 fn probe_failed(name: &str, message: String) -> RuntimeError {
     RuntimeError::ProbeFailed {
         name: name.to_string(),
-        message,
-    }
+        message, span: 0..0 }
 }
 
 fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
@@ -126,8 +125,7 @@ fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
                 Value::Float(f)
             } else {
                 return Err(RuntimeError::Error {
-                    message: "unsupported JSON number in parsed value".into(),
-                });
+                    message: "unsupported JSON number in parsed value".into(), span: 0..0 });
             }
         }
         serde_json::Value::String(s) => Value::Str(s),

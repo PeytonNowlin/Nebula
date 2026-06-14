@@ -43,7 +43,7 @@ fn dispatch_never_hits_missing_handler_arm() {
     let mut rt = Runtime::new(&empty_program());
     for name in manifest().names() {
         let result = rt.eval_builtin_for_coverage(name);
-        if let Err(RuntimeError::Error { message }) = result {
+        if let Err(RuntimeError::Error { message, .. }) = result {
             assert!(
                 !message.contains("listed in builtins.toml but has no runtime handler"),
                 "builtin `{name}` is missing a runtime handler"

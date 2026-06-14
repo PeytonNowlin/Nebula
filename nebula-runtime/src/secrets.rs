@@ -24,8 +24,7 @@ pub fn resolve_secrets(
             SecretBinding::Env { env } => env::var(env).map_err(|_| RuntimeError::Error {
                 message: format!(
                     "secret `{name}` references unset environment variable `{env}`"
-                ),
-            })?,
+                ), span: 0..0 })?,
             SecretBinding::Value { value } => value.clone(),
         };
         store.insert(name.clone(), value);
@@ -46,13 +45,11 @@ pub fn substitute_secrets(template: &str, store: &SecretsStore) -> Result<String
         let after = &rest[start + "${secret:".len()..];
         let Some(end) = after.find('}') else {
             return Err(RuntimeError::Error {
-                message: format!("unclosed secret template in `{template}`"),
-            });
+                message: format!("unclosed secret template in `{template}`"), span: 0..0 });
         };
         let name = &after[..end];
         let value = store.get(name).ok_or_else(|| RuntimeError::Error {
-            message: format!("unknown secret `{name}` in template `{template}`"),
-        })?;
+            message: format!("unknown secret `{name}` in template `{template}`"), span: 0..0 })?;
         out.push_str(value);
         rest = &after[end + 1..];
     }

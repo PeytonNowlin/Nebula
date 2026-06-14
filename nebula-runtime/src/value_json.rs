@@ -38,8 +38,7 @@ pub fn json_to_value(value: serde_json::Value) -> Result<Value, RuntimeError> {
                 Value::Float(f)
             } else {
                 return Err(RuntimeError::Error {
-                    message: "unsupported JSON number in value".into(),
-                });
+                    message: "unsupported JSON number in value".into(), span: 0..0 });
             }
         }
         serde_json::Value::String(s) => Value::Str(s),

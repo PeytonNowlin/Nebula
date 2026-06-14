@@ -61,6 +61,7 @@ fn simple_builtin_handled(name: &str) -> bool {
 fn missing_handler_error(name: &str) -> RuntimeError {
     RuntimeError::Error {
         message: format!("builtin `{name}` is {MISSING_HANDLER_MARKER}"),
+        span: 0..0,
     }
 }
 
@@ -72,9 +73,7 @@ impl Runtime {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         let Some(def) = manifest().get(name) else {
-            return Err(RuntimeError::Error {
-                message: format!("unknown builtin `{name}`"),
-            });
+            return Err(self.runtime_error(format!("unknown builtin `{name}`")));
         };
 
         let value = match def.checker {
@@ -122,27 +121,19 @@ impl Runtime {
 
     /// Evaluate `args[index]` and require it to be a `Str`.
     fn str_arg(&mut self, args: &[IrExpr], index: usize, fname: &str) -> Result<String, RuntimeError> {
-        let expr = args.get(index).ok_or_else(|| RuntimeError::Error {
-            message: format!("{fname} requires {} arguments", index + 1),
-        })?;
+        let expr = args.get(index).ok_or_else(|| self.runtime_error(format!("{fname} requires {} arguments", index + 1)))?;
         match self.eval_expr(expr)? {
             Value::Str(s) => Ok(s),
-            _ => Err(RuntimeError::Error {
-                message: format!("{fname} requires Str arguments"),
-            }),
+            _ => Err(self.runtime_error(format!("{fname} requires Str arguments"))),
         }
     }
 
     /// Evaluate `args[index]` and require it to be an `Int`.
     fn int_arg(&mut self, args: &[IrExpr], index: usize, fname: &str) -> Result<i64, RuntimeError> {
-        let expr = args.get(index).ok_or_else(|| RuntimeError::Error {
-            message: format!("{fname} requires {} arguments", index + 1),
-        })?;
+        let expr = args.get(index).ok_or_else(|| self.runtime_error(format!("{fname} requires {} arguments", index + 1)))?;
         match self.eval_expr(expr)? {
             Value::Int(n) => Ok(n),
-            _ => Err(RuntimeError::Error {
-                message: format!("{fname} requires an Int argument"),
-            }),
+            _ => Err(self.runtime_error(format!("{fname} requires an Int argument"))),
         }
     }
 
@@ -241,9 +232,7 @@ impl Runtime {
         let s = self.str_arg(args, 0, "split")?;
         let sep = self.str_arg(args, 1, "split")?;
         if sep.is_empty() {
-            return Err(RuntimeError::Error {
-                message: "split separator must be non-empty".into(),
-            });
+            return Err(self.runtime_error("split separator must be non-empty"));
         }
         Ok(Value::List(
             s.split(&sep).map(|part| Value::Str(part.to_string())).collect(),
@@ -252,14 +241,10 @@ impl Runtime {
 
     /// join(parts: List<Str>, sep) -> Str.
     fn eval_join(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let parts = match self.eval_expr(args.first().ok_or_else(|| RuntimeError::Error {
-            message: "join requires 2 arguments".into(),
-        })?)? {
+        let parts = match self.eval_expr(args.first().ok_or_else(|| self.runtime_error("join requires 2 arguments"))?)? {
             Value::List(items) => items,
             _ => {
-                return Err(RuntimeError::Error {
-                    message: "join requires a list as first argument".into(),
-                })
+                return Err(self.runtime_error("join requires a list as first argument"))
             }
         };
         let sep = self.str_arg(args, 1, "join")?;
@@ -268,9 +253,7 @@ impl Runtime {
             match item {
                 Value::Str(s) => strs.push(s),
                 _ => {
-                    return Err(RuntimeError::Error {
-                        message: "join requires a List<Str>".into(),
-                    })
+                    return Err(self.runtime_error("join requires a List<Str>"))
                 }
             }
         }
@@ -298,41 +281,31 @@ impl Runtime {
     }
 
     fn eval_len(&mut self, args: &[IrExpr], _span: Span) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "len requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("len requires argument"))?)?;
         match v {
             Value::List(items) => Ok(Value::Int(items.len() as i64)),
             Value::Map(map) => Ok(Value::Int(map.len() as i64)),
             // Count Unicode scalar values, not bytes, to match the Python
             // backend's `len()` (NEB string length is in code points).
             Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
-            _ => Err(RuntimeError::Error {
-                message: "len requires list, map, or string".into(),
-            }),
+            _ => Err(self.runtime_error("len requires list, map, or string")),
         }
     }
 
     fn eval_push(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
-            return Err(RuntimeError::Error {
-                message: "push requires exactly 2 arguments".into(),
-            });
+            return Err(self.runtime_error("push requires exactly 2 arguments"));
         }
 
         let list_name = match args.first().map(|arg| &arg.node) {
             Some(IrExprKind::Var(name)) => name.clone(),
             _ => {
-                return Err(RuntimeError::Error {
-                    message: "push requires a list variable as first argument".into(),
-                });
+                return Err(self.runtime_error("push requires a list variable as first argument"));
             }
         };
 
         let value = self.eval_expr(
-            args.get(1).ok_or(RuntimeError::Error {
-                message: "push requires a value as second argument".into(),
-            })?,
+            args.get(1).ok_or(self.runtime_error("push requires a value as second argument"))?,
         )?;
 
         let before = self.env_footprint(&list_name);
@@ -340,18 +313,14 @@ impl Runtime {
             Some(Value::List(items)) => {
                 if let Some(existing) = items.first() {
                     if !values_same_type(existing, &value) {
-                        return Err(RuntimeError::Error {
-                            message: format!("push value type mismatch for list `{list_name}`"),
-                        });
+                        return Err(self.runtime_error(format!("push value type mismatch for list `{list_name}`")));
                     }
                 }
                 items.push(value);
                 self.record_env_footprint_change(&list_name, before)?;
                 Ok(Value::None)
             }
-            Some(_) => Err(RuntimeError::Error {
-                message: format!("`{list_name}` is not a list"),
-            }),
+            Some(_) => Err(self.runtime_error(format!("`{list_name}` is not a list"))),
             None => Err(RuntimeError::UndefinedVar {
                 name: list_name,
                 span: span.clone(),
@@ -361,17 +330,13 @@ impl Runtime {
 
     fn eval_at(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
-            return Err(RuntimeError::Error {
-                message: "at requires exactly 2 arguments".into(),
-            });
+            return Err(self.runtime_error("at requires exactly 2 arguments"));
         }
         let list = self.eval_expr(&args[0])?;
         let index = match self.eval_expr(&args[1])? {
             Value::Int(i) => i,
             _ => {
-                return Err(RuntimeError::Error {
-                    message: "at index must be an Int".into(),
-                })
+                return Err(self.runtime_error("at index must be an Int"))
             }
         };
         match list {
@@ -385,17 +350,13 @@ impl Runtime {
                 }
                 Ok(items[index as usize].clone())
             }
-            _ => Err(RuntimeError::Error {
-                message: "at requires a list as first argument".into(),
-            }),
+            _ => Err(self.runtime_error("at requires a list as first argument")),
         }
     }
 
     fn eval_get(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
-            return Err(RuntimeError::Error {
-                message: "get requires exactly 2 arguments".into(),
-            });
+            return Err(self.runtime_error("get requires exactly 2 arguments"));
         }
         let map = self.eval_expr(&args[0])?;
         let key = super::value_to_string(&self.eval_expr(&args[1])?)?;
@@ -407,42 +368,32 @@ impl Runtime {
                     key,
                     span: span.clone(),
                 }),
-            _ => Err(RuntimeError::Error {
-                message: "get requires a map as first argument".into(),
-            }),
+            _ => Err(self.runtime_error("get requires a map as first argument")),
         }
     }
 
     fn eval_has(&mut self, args: &[IrExpr], _span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
-            return Err(RuntimeError::Error {
-                message: "has requires exactly 2 arguments".into(),
-            });
+            return Err(self.runtime_error("has requires exactly 2 arguments"));
         }
         let map = self.eval_expr(&args[0])?;
         let key = super::value_to_string(&self.eval_expr(&args[1])?)?;
         match map {
             Value::Map(entries) => Ok(Value::Bool(entries.contains_key(&key))),
-            _ => Err(RuntimeError::Error {
-                message: "has requires a map as first argument".into(),
-            }),
+            _ => Err(self.runtime_error("has requires a map as first argument")),
         }
     }
 
     fn eval_insert(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 3 {
-            return Err(RuntimeError::Error {
-                message: "insert requires exactly 3 arguments".into(),
-            });
+            return Err(self.runtime_error("insert requires exactly 3 arguments"));
         }
         // First argument must be a map variable so it is mutated in place,
         // mirroring `push` on lists.
         let map_name = match args.first().map(|arg| &arg.node) {
             Some(IrExprKind::Var(name)) => name.clone(),
             _ => {
-                return Err(RuntimeError::Error {
-                    message: "insert requires a map variable as first argument".into(),
-                });
+                return Err(self.runtime_error("insert requires a map variable as first argument"));
             }
         };
         let key = super::value_to_string(&self.eval_expr(&args[1])?)?;
@@ -454,9 +405,7 @@ impl Runtime {
                 self.record_env_footprint_change(&map_name, before)?;
                 Ok(Value::None)
             }
-            Some(_) => Err(RuntimeError::Error {
-                message: format!("`{map_name}` is not a map"),
-            }),
+            Some(_) => Err(self.runtime_error(format!("`{map_name}` is not a map"))),
             None => Err(RuntimeError::UndefinedVar {
                 name: map_name,
                 span: span.clone(),
@@ -465,81 +414,53 @@ impl Runtime {
     }
 
     fn eval_str_to_int(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "str_to_int requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("str_to_int requires argument"))?)?;
         match v {
-            Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| RuntimeError::Error {
-                message: format!("invalid int: {s}"),
-            }),
-            _ => Err(RuntimeError::Error {
-                message: "str_to_int requires string".into(),
-            }),
+            Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| self.runtime_error(format!("invalid int: {s}"))),
+            _ => Err(self.runtime_error("str_to_int requires string")),
         }
     }
 
     fn eval_int_to_str(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "int_to_str requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("int_to_str requires argument"))?)?;
         match v {
             Value::Int(n) => Ok(Value::Str(n.to_string())),
-            _ => Err(RuntimeError::Error {
-                message: "int_to_str requires int".into(),
-            }),
+            _ => Err(self.runtime_error("int_to_str requires int")),
         }
     }
 
     fn eval_float_to_str(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "float_to_str requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("float_to_str requires argument"))?)?;
         match v {
             Value::Float(n) => Ok(Value::Str(format_float(n))),
-            _ => Err(RuntimeError::Error {
-                message: "float_to_str requires float".into(),
-            }),
+            _ => Err(self.runtime_error("float_to_str requires float")),
         }
     }
 
     fn eval_str_to_float(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "str_to_float requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("str_to_float requires argument"))?)?;
         match v {
             Value::Str(s) => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
-                RuntimeError::Error {
-                    message: format!("invalid float: {s}"),
-                }
+                self.runtime_error(format!("invalid float: {s}"))
             }),
-            _ => Err(RuntimeError::Error {
-                message: "str_to_float requires string".into(),
-            }),
+            _ => Err(self.runtime_error("str_to_float requires string")),
         }
     }
 
     fn eval_int_to_float(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "int_to_float requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("int_to_float requires argument"))?)?;
         match v {
             Value::Int(n) => Ok(Value::Float(n as f64)),
-            _ => Err(RuntimeError::Error {
-                message: "int_to_float requires int".into(),
-            }),
+            _ => Err(self.runtime_error("int_to_float requires int")),
         }
     }
 
     fn eval_float_to_int(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
-        let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
-            message: "float_to_int requires argument".into(),
-        })?)?;
+        let v = self.eval_expr(args.first().ok_or(self.runtime_error("float_to_int requires argument"))?)?;
         match v {
             // Truncate toward zero, matching Python int(float).
             Value::Float(n) => Ok(Value::Int(n.trunc() as i64)),
-            _ => Err(RuntimeError::Error {
-                message: "float_to_int requires float".into(),
-            }),
+            _ => Err(self.runtime_error("float_to_int requires float")),
         }
     }
 }
@@ -625,7 +546,7 @@ mod tests {
         let mut rt = Runtime::new(&empty_program());
         for name in manifest().names() {
             let result = rt.eval_builtin(name, &[], 0..0);
-            if let Err(RuntimeError::Error { message }) = result {
+            if let Err(RuntimeError::Error { message, .. }) = result {
                 assert!(
                     !message.contains(MISSING_HANDLER_MARKER),
                     "builtin `{name}` missing runtime handler"

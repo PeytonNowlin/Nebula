@@ -97,6 +97,7 @@ impl Runtime {
         if started.elapsed() > limit {
             return Err(RuntimeError::ExecutionTimeout {
                 limit_ms: limit.as_millis() as u64,
+                span: self.diagnostic_span.clone(),
             });
         }
         Ok(())
@@ -125,6 +126,7 @@ impl Runtime {
             return Err(RuntimeError::MemoryLimitExceeded {
                 limit_bytes: limit,
                 used_bytes: projected,
+                span: self.diagnostic_span.clone(),
             });
         }
         Ok(())
@@ -138,6 +140,7 @@ impl Runtime {
             return Err(RuntimeError::MemoryLimitExceeded {
                 limit_bytes: limit,
                 used_bytes: self.memory_bytes,
+                span: self.diagnostic_span.clone(),
             });
         }
         Ok(())

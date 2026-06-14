@@ -133,8 +133,7 @@ impl ProbeHost for RegistryProbeHost {
         let handler = self
             .handler_for(call.name)
             .ok_or(RuntimeError::ProbeNotImplemented {
-                name: call.name.to_string(),
-            })?
+                name: call.name.to_string(), span: 0..0 })?
             .clone();
 
         match handler {
@@ -147,8 +146,7 @@ impl ProbeHost for RegistryProbeHost {
                     message: format!(
                         "probe `{}` is configured as MCP but no MCP servers are loaded",
                         call.name
-                    ),
-                })?;
+                    ), span: 0..0 })?;
                 let tool_name = Self::resolve_tool_name(call.name, &tool);
                 let args = call
                     .args
@@ -179,23 +177,21 @@ impl ProbeHost for RegistryProbeHost {
 
 fn mcp_error_to_runtime(err: McpError) -> RuntimeError {
     match err {
-        McpError::Transport { message } => RuntimeError::McpTransport { message },
+        McpError::Transport { message } => RuntimeError::McpTransport { message, span: 0..0 },
         McpError::ToolFailed { tool, message } => RuntimeError::ProbeFailed {
             name: tool,
-            message,
-        },
-        McpError::Config { message } => RuntimeError::Error { message },
+            message, span: 0..0 },
+        McpError::Config { message } => RuntimeError::Error { message, span: 0..0 },
     }
 }
 
 fn mcp_invoke_error(probe_name: &str, err: McpError) -> RuntimeError {
     match err {
-        McpError::Transport { message } => RuntimeError::McpTransport { message },
+        McpError::Transport { message } => RuntimeError::McpTransport { message, span: 0..0 },
         McpError::ToolFailed { .. } => RuntimeError::ProbeFailed {
             name: probe_name.to_string(),
-            message: err.to_string(),
-        },
-        McpError::Config { message } => RuntimeError::Error { message },
+            message: err.to_string(), span: 0..0 },
+        McpError::Config { message } => RuntimeError::Error { message, span: 0..0 },
     }
 }
 
@@ -230,8 +226,7 @@ fn invoke_jsonl_log(
     events.push(event.clone());
     let line = serde_json::to_string(&event).map_err(|err| RuntimeError::ProbeFailed {
         name: call.name.to_string(),
-        message: err.to_string(),
-    })?;
+        message: err.to_string(), span: 0..0 })?;
 
     if let Some(path) = path {
         let mut file = OpenOptions::new()
@@ -240,12 +235,10 @@ fn invoke_jsonl_log(
             .open(path)
             .map_err(|err| RuntimeError::ProbeFailed {
                 name: call.name.to_string(),
-                message: format!("failed to open probe log `{}`: {err}", path.display()),
-            })?;
+                message: format!("failed to open probe log `{}`: {err}", path.display()), span: 0..0 })?;
         writeln!(file, "{line}").map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!("failed to write probe log: {err}"),
-        })?;
+            message: format!("failed to write probe log: {err}"), span: 0..0 })?;
     } else {
         eprintln!("{line}");
     }
@@ -276,8 +269,7 @@ fn invoke_command_probe(
     if command.is_empty() {
         return Err(RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: "command probe requires a non-empty command".into(),
-        });
+            message: "command probe requires a non-empty command".into(), span: 0..0 });
     }
 
     let request = CommandRequest {
@@ -290,8 +282,7 @@ fn invoke_command_probe(
     };
     let request_json = serde_json::to_string(&request).map_err(|err| RuntimeError::ProbeFailed {
         name: call.name.to_string(),
-        message: err.to_string(),
-    })?;
+        message: err.to_string(), span: 0..0 })?;
 
     let mut child_cmd = Command::new(&command[0]);
     child_cmd
@@ -306,22 +297,19 @@ fn invoke_command_probe(
         .spawn()
         .map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!("failed to spawn probe command: {err}"),
-        })?;
+            message: format!("failed to spawn probe command: {err}"), span: 0..0 })?;
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(request_json.as_bytes())
             .map_err(|err| RuntimeError::ProbeFailed {
                 name: call.name.to_string(),
-                message: format!("failed to write probe request: {err}"),
-            })?;
+                message: format!("failed to write probe request: {err}"), span: 0..0 })?;
     }
 
     let output = child.wait_with_output().map_err(|err| RuntimeError::ProbeFailed {
         name: call.name.to_string(),
-        message: format!("failed to wait for probe command: {err}"),
-    })?;
+        message: format!("failed to wait for probe command: {err}"), span: 0..0 })?;
 
     if !output.status.success() {
         return Err(RuntimeError::ProbeFailed {
@@ -329,15 +317,13 @@ fn invoke_command_probe(
             message: format!(
                 "probe command exited with status {}",
                 output.status
-            ),
-        });
+            ), span: 0..0 });
     }
 
     let response: CommandResponse =
         serde_json::from_slice(&output.stdout).map_err(|err| RuntimeError::ProbeFailed {
             name: call.name.to_string(),
-            message: format!("invalid probe response JSON: {err}"),
-        })?;
+            message: format!("invalid probe response JSON: {err}"), span: 0..0 })?;
 
     match response.status.as_str() {
         "ok" => match response.value {
@@ -348,8 +334,7 @@ fn invoke_command_probe(
             name: call.name.to_string(),
             message: response
                 .message
-                .unwrap_or_else(|| "probe command returned error status".into()),
-        }),
+                .unwrap_or_else(|| "probe command returned error status".into()), span: 0..0 }),
     }
 }
 
