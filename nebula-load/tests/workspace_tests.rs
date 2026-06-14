@@ -43,4 +43,16 @@ fn load_workspace_collects_entry_and_imported_modules() {
             nebula_ast::TopLevel::Sector(_) | nebula_ast::TopLevel::Import(_)
         )
     }));
+
+    assert_eq!(
+        loaded.symbol_sources.get("math.double").map(PathBuf::as_path),
+        Some(math_canonical.as_path())
+    );
+    assert_eq!(
+        loaded.symbol_sources.get("math").map(PathBuf::as_path),
+        Some(math_canonical.as_path())
+    );
+
+    let entry_imports = loaded.import_graph.get(&entry_canonical).expect("entry imports");
+    assert!(entry_imports.contains(&math_canonical));
 }

@@ -9,6 +9,7 @@ members = [
     "nebula-runtime",
     "nebula-fmt",
     "nebula-cli",
+    "nebula-python",
     "nebula-test-support",
 ]
 

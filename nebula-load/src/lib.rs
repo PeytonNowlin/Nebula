@@ -54,6 +54,15 @@ struct SymbolRegistry {
 }
 
 impl SymbolRegistry {
+    fn into_symbol_sources(self) -> HashMap<String, PathBuf> {
+        let mut sources = HashMap::new();
+        sources.extend(self.sectors);
+        sources.extend(self.functions);
+        sources.extend(self.structs);
+        sources.extend(self.probes);
+        sources
+    }
+
     fn register_sector(
         &mut self,
         sector: &Spanned<Sector>,
@@ -127,6 +136,10 @@ fn register_symbol(
 pub struct LoadedProgram {
     pub merged: Program,
     pub modules: BTreeMap<PathBuf, Program>,
+    /// Maps qualified symbols (`sector`, `sector.fn`, `sector.Struct`, probes) to defining file.
+    pub symbol_sources: HashMap<String, PathBuf>,
+    /// Direct imports per module (canonical `.neb` paths).
+    pub import_graph: BTreeMap<PathBuf, Vec<PathBuf>>,
 }
 
 struct Loader {
@@ -136,6 +149,7 @@ struct Loader {
     imported_sectors: Vec<Spanned<TopLevel>>,
     modules: BTreeMap<PathBuf, Program>,
     registry: SymbolRegistry,
+    import_graph: BTreeMap<PathBuf, Vec<PathBuf>>,
 }
 
 impl Loader {
@@ -147,7 +161,24 @@ impl Loader {
             imported_sectors: Vec::new(),
             modules: BTreeMap::new(),
             registry: SymbolRegistry::default(),
+            import_graph: BTreeMap::new(),
         }
+    }
+
+    fn record_import(&mut self, from: &Path, to: &Path) -> Result<(), LoadError> {
+        let from_canonical = fs::canonicalize(from).map_err(|_| LoadError::NotFound {
+            path: from.to_path_buf(),
+            span: 0..0,
+        })?;
+        let to_canonical = fs::canonicalize(to).map_err(|_| LoadError::NotFound {
+            path: to.to_path_buf(),
+            span: 0..0,
+        })?;
+        let imports = self.import_graph.entry(from_canonical).or_default();
+        if !imports.contains(&to_canonical) {
+            imports.push(to_canonical);
+        }
+        Ok(())
     }
 
     fn load(mut self, program: Program) -> Result<LoadedProgram, LoadError> {
@@ -155,7 +186,7 @@ impl Loader {
             path: self.entry_path.clone(),
             span: 0..0,
         })?;
-        self.modules.insert(entry_canonical, program.clone());
+        self.modules.insert(entry_canonical.clone(), program.clone());
 
         let entry_dir = self
             .entry_path
@@ -175,12 +206,30 @@ impl Loader {
 
         for (import_path, span) in imports {
             let resolved = resolve_import_path(&entry_dir, &import_path.node);
+            self.record_import(&self.entry_path, &resolved)?;
             self.load_file(&resolved, span)?;
         }
 
         for item in &entry_items {
-            if let TopLevel::Sector(sector) = &item.node {
-                self.registry.register_sector(sector, &self.entry_path)?;
+            match &item.node {
+                TopLevel::Sector(sector) => {
+                    self.registry
+                        .register_sector(sector, &self.entry_path)?;
+                }
+                TopLevel::Mission(mission) => {
+                    for mitem in &mission.node.items {
+                        if let MissionItem::Probe(probe) = mitem {
+                            register_symbol(
+                                "probe",
+                                &probe.node.name.node,
+                                probe.node.name.span.clone(),
+                                &self.entry_path,
+                                &mut self.registry.probes,
+                            )?;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -190,6 +239,8 @@ impl Loader {
         Ok(LoadedProgram {
             merged: Program { items },
             modules: self.modules,
+            symbol_sources: self.registry.into_symbol_sources(),
+            import_graph: self.import_graph,
         })
     }
 
@@ -243,9 +294,10 @@ impl Loader {
             }
         }
 
-        for (import_path, import_span) in imports {
+        for (import_path, import_span) in &imports {
             let resolved = resolve_import_path(&module_dir, &import_path.node);
-            self.load_file(&resolved, import_span)?;
+            self.record_import(&canonical, &resolved)?;
+            self.load_file(&resolved, import_span.clone())?;
         }
 
         for sector in sectors {
