@@ -105,6 +105,51 @@ fn mcp_http_probe_invokes_mock_server() {
 }
 
 #[test]
+fn mcp_list_tools_reports_notify_from_mock_server() {
+    use nebula_mcp::McpConnectionManager;
+    use nebula_runtime::list_probe_manifest;
+
+    let mock = workspace_root().join("scripts/mcp_mock_stdio.py");
+    let manifest_path = std::env::temp_dir().join("nebula-mcp-list-tools-manifest.json");
+    fs::write(
+        &manifest_path,
+        format!(
+            r#"{{
+  "mcp_servers": {{
+    "local": {{
+      "transport": "stdio",
+      "command": ["python3", "{}"]
+    }}
+  }},
+  "probes": {{
+    "notify": {{
+      "kind": "mcp",
+      "server": "local",
+      "tool": "notify"
+    }}
+  }}
+}}"#,
+            mock.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let report = list_probe_manifest(&manifest_path, true).expect("list manifest");
+    let server = report
+        .mcp_servers
+        .as_ref()
+        .and_then(|servers| servers.get("local"))
+        .expect("local server report");
+    let tools = server.tools.as_ref().expect("tools discovered");
+    assert!(tools.iter().any(|tool| tool.name == "notify"));
+
+    let manifest = nebula_runtime::read_probe_manifest(&manifest_path).expect("read manifest");
+    let manager = McpConnectionManager::new(manifest.mcp_servers).expect("manager");
+    let direct = manager.list_tools("local").expect("list_tools");
+    assert!(direct.iter().any(|tool| tool.name == "notify"));
+}
+
+#[test]
 fn mcp_manifest_unknown_server_is_rejected() {
     let manifest_path = std::env::temp_dir().join("nebula-mcp-bad-manifest.json");
     fs::write(

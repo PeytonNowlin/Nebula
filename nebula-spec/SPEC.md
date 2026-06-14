@@ -140,7 +140,7 @@ mission main {
   - **`jsonl`** — structured JSONL logging (built-in `log` probe)
   - **`command`** — external process with Nebula stdin/stdout JSON protocol
   - **`mcp`** — Model Context Protocol `tools/call` via stdio subprocess or Streamable HTTP
-- MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`.
+- MCP manifests define shared servers under `mcp_servers` and map probes with `"kind": "mcp"`, `"server": "<id>"`, and optional `"tool"`. One connection is reused per server entry. Transport failures use `NEB-P004`. Agents can introspect manifest bindings with `nebula probes list --probes <path>`; add `--mcp` to query each server's live `tools/list` catalog.
 - `telemetry` blocks append structured JSONL traces for each statement executed within. Each line matches [`schemas/telemetry-event.schema.json`](../schemas/telemetry-event.schema.json) (`step`: `let` | `set` | `probe`, `detail`: binding or probe name).
 - `jsonl` probe handlers (including built-in `log`) append lines matching [`schemas/probe-jsonl-event.schema.json`](../schemas/probe-jsonl-event.schema.json). Probe argument values use the encoding in [`schemas/nebula-value.schema.json`](../schemas/nebula-value.schema.json).
 - `emit` and `return` both exit the current function with a value.

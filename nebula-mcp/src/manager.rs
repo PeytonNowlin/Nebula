@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{McpServerConfig, McpTransportKind};
 use crate::error::McpError;
+use crate::protocol::McpToolDescriptor;
 use crate::session::McpSession;
 use crate::transport::{HttpMcpSession, StdioMcpSession};
 
@@ -18,6 +19,13 @@ impl McpSession for SessionKind {
         match self {
             SessionKind::Stdio(session) => session.call_tool(tool, arguments),
             SessionKind::Http(session) => session.call_tool(tool, arguments),
+        }
+    }
+
+    fn list_tools(&self) -> Result<Vec<McpToolDescriptor>, McpError> {
+        match self {
+            SessionKind::Stdio(session) => session.list_tools(),
+            SessionKind::Http(session) => session.list_tools(),
         }
     }
 }
@@ -65,5 +73,28 @@ impl McpConnectionManager {
             .get(server_id)
             .expect("session inserted above if missing");
         session.call_tool(tool, args)
+    }
+
+    pub fn list_tools(&self, server_id: &str) -> Result<Vec<McpToolDescriptor>, McpError> {
+        let config = self.servers.get(server_id).ok_or_else(|| {
+            McpError::config(format!("unknown MCP server `{server_id}` in probe manifest"))
+        })?;
+
+        let mut sessions = self.sessions.lock().map_err(|_| {
+            McpError::transport("MCP connection manager lock poisoned")
+        })?;
+
+        if !sessions.contains_key(server_id) {
+            let session = match config.transport {
+                McpTransportKind::Stdio => SessionKind::Stdio(StdioMcpSession::connect(config)?),
+                McpTransportKind::Http => SessionKind::Http(HttpMcpSession::connect(config)?),
+            };
+            sessions.insert(server_id.to_string(), session);
+        }
+
+        let session = sessions
+            .get(server_id)
+            .expect("session inserted above if missing");
+        session.list_tools()
     }
 }

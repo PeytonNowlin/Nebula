@@ -31,6 +31,23 @@ def handle_request(message: Dict[str, Any]) -> None:
         )
         return
 
+    if method == "tools/list":
+        write_message(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "notify",
+                            "description": "Send a notification to a channel",
+                        }
+                    ]
+                },
+            }
+        )
+        return
+
     if method == "tools/call":
         params = message.get("params") or {}
         tool = params.get("name")

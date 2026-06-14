@@ -67,6 +67,11 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Introspect probe host manifests and MCP tool availability
+    Probes {
+        #[command(subcommand)]
+        command: ProbesCommands,
+    },
     /// Compile a Nebula file to another target language
     Compile {
         file: PathBuf,
@@ -78,6 +83,22 @@ enum Commands {
         telemetry: Option<PathBuf>,
         #[arg(long)]
         probes: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProbesCommands {
+    /// List declared probe bindings (and optionally live MCP tools)
+    List {
+        /// JSON manifest mapping declared probes to host handlers
+        #[arg(long)]
+        probes: PathBuf,
+        /// Query MCP servers via tools/list
+        #[arg(long)]
+        mcp: bool,
+        /// Emit structured JSON on stdout
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -159,6 +180,12 @@ fn main() -> ExitCode {
                 Err(err) => emit_failure(err, None, json),
             }
         }
+        Commands::Probes { command } => match command {
+            ProbesCommands::List { probes, mcp, json } => match list_probes(&probes, mcp, json) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(err) => emit_failure(err, None, json),
+            },
+        },
         Commands::Compile {
             file,
             target,
@@ -242,6 +269,63 @@ fn fmt(path: &PathBuf, write: bool) -> miette::Result<()> {
     } else {
         print!("{}", format_program(&loaded.merged));
     }
+    Ok(())
+}
+
+fn list_probes(path: &PathBuf, discover_mcp: bool, json: bool) -> miette::Result<()> {
+    let host = Host::new();
+    let report = host.list_probes(path, discover_mcp)?;
+    if json {
+        let payload = serde_json::to_string(&report).into_diagnostic()?;
+        println!("{payload}");
+        return Ok(());
+    }
+
+    println!("manifest: {}", report.manifest);
+    println!("probes:");
+    for probe in &report.probes {
+        match probe {
+            nebula_runtime::DeclaredProbe::Jsonl { name, path } => {
+                if let Some(path) = path {
+                    println!("  {name:<16} jsonl  path={path}");
+                } else {
+                    println!("  {name:<16} jsonl");
+                }
+            }
+            nebula_runtime::DeclaredProbe::Command { name, command } => {
+                println!("  {name:<16} command  {}", command.join(" "));
+            }
+            nebula_runtime::DeclaredProbe::Mcp { name, server, tool } => {
+                if let Some(tool) = tool {
+                    println!("  {name:<16} mcp  server={server}  tool={tool}");
+                } else {
+                    println!("  {name:<16} mcp  server={server}");
+                }
+            }
+        }
+    }
+
+    if let Some(servers) = &report.mcp_servers {
+        println!("mcp servers:");
+        let mut ids: Vec<_> = servers.keys().collect();
+        ids.sort();
+        for server_id in ids {
+            let server = &servers[server_id];
+            println!("  {server_id} ({})", server.transport);
+            if let Some(tools) = &server.tools {
+                for tool in tools {
+                    if let Some(description) = &tool.description {
+                        println!("    - {} — {description}", tool.name);
+                    } else {
+                        println!("    - {}", tool.name);
+                    }
+                }
+            } else if let Some(error) = &server.error {
+                println!("    (tools/list failed: {error})");
+            }
+        }
+    }
+
     Ok(())
 }
 

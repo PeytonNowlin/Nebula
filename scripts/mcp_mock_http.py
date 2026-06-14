@@ -46,6 +46,20 @@ class McpHandler(BaseHTTPRequestHandler):
                 },
             }
 
+        if method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "notify",
+                            "description": "Send a notification to a channel",
+                        }
+                    ]
+                },
+            }
+
         if method == "tools/call":
             params = message.get("params") or {}
             tool = params.get("name")

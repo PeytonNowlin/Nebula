@@ -163,6 +163,47 @@ fn cli_run_json_emits_structured_diagnostics_on_type_error() {
 }
 
 #[test]
+fn cli_probes_list_json_reports_manifest_bindings() {
+    let manifest = workspace_root().join("probes/mcp_stdio.json");
+    let output = Command::new(nebula_bin())
+        .arg("probes")
+        .arg("list")
+        .arg("--json")
+        .arg("--probes")
+        .arg(&manifest)
+        .output()
+        .expect("spawn nebula probes list --json");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let probes = parsed["probes"].as_array().expect("probes array");
+    assert!(probes.iter().any(|probe| probe["name"] == "notify" && probe["kind"] == "mcp"));
+    assert!(probes.iter().any(|probe| probe["name"] == "log" && probe["kind"] == "jsonl"));
+    assert!(parsed["mcp_servers"].is_null());
+}
+
+#[test]
+fn cli_probes_list_mcp_discovers_tools() {
+    let manifest = workspace_root().join("probes/mcp_stdio.json");
+    let output = Command::new(nebula_bin())
+        .arg("probes")
+        .arg("list")
+        .arg("--json")
+        .arg("--mcp")
+        .arg("--probes")
+        .arg(&manifest)
+        .output()
+        .expect("spawn nebula probes list --json --mcp");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let tools = parsed["mcp_servers"]["local"]["tools"]
+        .as_array()
+        .expect("local tools array");
+    assert!(tools.iter().any(|tool| tool["name"] == "notify"));
+}
+
+#[test]
 fn cli_check_fails_on_type_error() {
     let path = workspace_root().join("examples/hello.neb");
     let mut bad = std::fs::read_to_string(&path).expect("read hello");

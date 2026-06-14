@@ -8,3 +8,4 @@ mod transport;
 pub use config::{McpServerConfig, McpTransportKind};
 pub use error::McpError;
 pub use manager::McpConnectionManager;
+pub use protocol::McpToolDescriptor;

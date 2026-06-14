@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nebula_mcp::{McpConnectionManager, McpError, McpServerConfig};
+use nebula_mcp::{McpConnectionManager, McpError};
 use serde::{Deserialize, Serialize};
 
+use crate::probe_manifest::{read_probe_manifest, validate_manifest, ProbeBinding};
 use crate::{RuntimeError, Value};
 
 /// A probe invocation dispatched to the host.
@@ -26,30 +27,6 @@ struct ProbeEvent {
     ts: u64,
     probe: String,
     args: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ProbeManifest {
-    #[serde(default)]
-    mcp_servers: HashMap<String, McpServerConfig>,
-    probes: HashMap<String, ProbeBinding>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum ProbeBinding {
-    Jsonl {
-        #[serde(default)]
-        path: Option<PathBuf>,
-    },
-    Command {
-        command: Vec<String>,
-    },
-    Mcp {
-        server: String,
-        #[serde(default)]
-        tool: Option<String>,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -84,14 +61,8 @@ impl RegistryProbeHost {
     }
 
     pub fn load_manifest(&mut self, path: &Path) -> Result<(), RuntimeError> {
-        let source = fs::read_to_string(path).map_err(|err| RuntimeError::Error {
-            message: format!("failed to read probe manifest `{}`: {err}", path.display()),
-        })?;
-        let manifest: ProbeManifest = serde_json::from_str(&source).map_err(|err| {
-            RuntimeError::Error {
-                message: format!("invalid probe manifest `{}`: {err}", path.display()),
-            }
-        })?;
+        let manifest = read_probe_manifest(path)?;
+        validate_manifest(&manifest)?;
 
         if !manifest.mcp_servers.is_empty() {
             self.mcp_manager = Some(
@@ -103,22 +74,6 @@ impl RegistryProbeHost {
         }
 
         for (name, binding) in manifest.probes {
-            if let ProbeBinding::Mcp { server, .. } = &binding {
-                if self.mcp_manager.is_none() {
-                    return Err(RuntimeError::Error {
-                        message: format!(
-                            "probe `{name}` uses kind mcp but manifest defines no mcp_servers"
-                        ),
-                    });
-                }
-                if !manifest.mcp_servers.contains_key(server) {
-                    return Err(RuntimeError::Error {
-                        message: format!(
-                            "probe `{name}` references unknown MCP server `{server}`"
-                        ),
-                    });
-                }
-            }
             self.handlers.insert(name, binding.into());
         }
         Ok(())

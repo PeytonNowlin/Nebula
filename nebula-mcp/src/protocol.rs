@@ -82,6 +82,31 @@ pub fn tools_call_request(id: u64, tool: &str, arguments: Value) -> JsonRpcReque
     }
 }
 
+pub fn tools_list_request(id: u64) -> JsonRpcRequest {
+    JsonRpcRequest {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/list",
+        params: json!({}),
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct McpToolDescriptor {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolsListResult {
+    pub tools: Vec<McpToolDescriptor>,
+}
+
 pub fn parse_call_tool_result(value: Value) -> Result<CallToolResult, String> {
     serde_json::from_value(value).map_err(|err| format!("invalid tools/call result: {err}"))
+}
+
+pub fn parse_tools_list_result(value: Value) -> Result<ToolsListResult, String> {
+    serde_json::from_value(value).map_err(|err| format!("invalid tools/list result: {err}"))
 }

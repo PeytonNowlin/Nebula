@@ -7,8 +7,9 @@ use ureq::Agent;
 use crate::config::McpServerConfig;
 use crate::error::McpError;
 use crate::protocol::{
-    initialize_request, initialized_notification, parse_call_tool_result, tools_call_request,
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    initialize_request, initialized_notification, parse_call_tool_result, parse_tools_list_result,
+    tools_call_request, tools_list_request, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    McpToolDescriptor,
 };
 use crate::session::McpSession;
 
@@ -209,5 +210,23 @@ impl McpSession for HttpMcpSession {
             return Err(McpError::tool_failed(tool, message));
         }
         Ok(())
+    }
+
+    fn list_tools(&self) -> Result<Vec<McpToolDescriptor>, McpError> {
+        self.ensure_initialized()?;
+        let request_id = self.next_id();
+        let response = self.send_request(&tools_list_request(request_id))?;
+        if let Some(error) = response.error {
+            return Err(McpError::transport(format!(
+                "tools/list failed: {}",
+                error.message
+            )));
+        }
+        let result = response
+            .result
+            .ok_or_else(|| McpError::transport("tools/list returned no result"))?;
+        parse_tools_list_result(result)
+            .map(|list| list.tools)
+            .map_err(McpError::transport)
     }
 }

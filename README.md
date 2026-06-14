@@ -50,6 +50,7 @@ The `nebula` binary provides three subcommands:
 | `nebula run <file>` | Typecheck and execute via the interpreter |
 | `nebula run <file> --telemetry <path>` | Run with JSONL telemetry written to `<path>` |
 | `nebula run <file> --probes <path>` | Load a probe host manifest (JSON) for custom probe handlers |
+| `nebula probes list --probes <path> [--mcp] [--json]` | List manifest probe bindings; `--mcp` queries live MCP `tools/list` |
 | `nebula compile <file> --target python --out <dir>` | Transpile to a multi-module Python package |
 | `nebula compile <file> --target python --out <dir> --probes <path>` | Embed probe manifest defaults in the entry module |
 

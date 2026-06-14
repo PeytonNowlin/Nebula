@@ -60,7 +60,8 @@ fn load_schema(name: &str) -> Validator {
     let path = schema_dir().join(name);
     let schema: Value = serde_json::from_str(&fs::read_to_string(&path).expect("read schema"))
         .expect("parse schema");
-    let resources = SchemasDirRetriever::new()
+    let retriever = SchemasDirRetriever::new();
+    let resources: Vec<_> = retriever
         .by_name
         .iter()
         .map(|(id, contents)| {
@@ -68,10 +69,11 @@ fn load_schema(name: &str) -> Validator {
                 id.clone(),
                 Resource::from_contents(contents.clone()).expect("schema resource"),
             )
-        });
+        })
+        .collect();
     jsonschema::options()
-        .with_resources(resources)
-        .with_retriever(SchemasDirRetriever::new())
+        .with_resources(resources.into_iter())
+        .with_retriever(retriever)
         .build(&schema)
         .expect("compile schema")
 }

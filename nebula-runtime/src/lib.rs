@@ -1,4 +1,5 @@
 mod probe;
+mod probe_manifest;
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -12,6 +13,10 @@ use serde::Serialize;
 use thiserror::Error;
 
 pub use probe::{ProbeHost, ProbeInvocation, RegistryProbeHost};
+pub use probe_manifest::{
+    list_probe_manifest, read_probe_manifest, validate_manifest, DeclaredProbe, McpServerReport,
+    ProbeBinding, ProbeListReport, ProbeManifest,
+};
 
 #[derive(Debug, Clone)]
 pub enum Value {

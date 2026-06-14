@@ -20,7 +20,7 @@ use nebula_ast::Program;
 use nebula_diagnostics::diagnostics_from_report_with_source;
 use nebula_ir::lower;
 use nebula_load::load_workspace;
-use nebula_runtime::Runtime;
+use nebula_runtime::{list_probe_manifest, Runtime};
 use nebula_syntax::parse;
 use nebula_types::{report_with_source, typecheck};
 
@@ -28,6 +28,7 @@ pub use nebula_ast::Program as AstProgram;
 pub use nebula_diagnostics::DiagnosticJson;
 pub use nebula_ir::IrProgram;
 pub use nebula_runtime::Value as HostValue;
+pub use nebula_runtime::{DeclaredProbe, McpServerReport, ProbeListReport};
 
 const SOURCE_ENTRY: &str = "<source>";
 
@@ -156,6 +157,15 @@ impl Host {
     /// Lower a file on disk to IR, resolving imports.
     pub fn try_lower_file(&self, path: impl AsRef<Path>) -> miette::Result<IrProgram> {
         compile_and_lower_file_report(path.as_ref()).map(|(_, ir)| ir)
+    }
+
+    /// List probe bindings from a manifest. Set `discover_mcp` to query live MCP servers via `tools/list`.
+    pub fn list_probes(
+        &self,
+        manifest: impl AsRef<Path>,
+        discover_mcp: bool,
+    ) -> miette::Result<ProbeListReport> {
+        list_probe_manifest(manifest.as_ref(), discover_mcp).map_err(Report::new)
     }
 
     fn run_ir(&self, entry: &str, source: &str, ir: IrProgram) -> RunResult {
