@@ -6,7 +6,7 @@
 
 Nebula trades symbolic brevity for machine legibility: operators are keywords (`plus`, `eq`, `lt`), types are always explicit, and the toolchain speaks JSON — structured diagnostics, AST export, IR export, and run records with stable `NEB-*` error codes.
 
-**Author in Nebula, ship as Python.** Agents iterate in Nebula against `check --json` / `run --json`, then `compile --target python` produces a self-contained package you run in existing Python infrastructure — Nebula is the typed authoring layer, Python is the bytecode. Full path: [**docs/author-in-nebula-ship-as-python.md**](docs/author-in-nebula-ship-as-python.md).
+**Author in Nebula, ship as Python.** Agents iterate in Nebula against `check --json` / `run --json` (driven by the [`scripts/nebula_agent.py`](scripts/nebula_agent.py) loop harness — see [**AGENTS.md**](AGENTS.md)), then `compile --target python` produces a self-contained package you run in existing Python infrastructure — Nebula is the typed authoring layer, Python is the bytecode. Full path: [**docs/author-in-nebula-ship-as-python.md**](docs/author-in-nebula-ship-as-python.md).
 
 This repository is the reference implementation: a Rust compiler and interpreter with a Python backend, probe host, and in-process embedding API.
 
@@ -284,6 +284,7 @@ Pipeline stages are also available directly via `Host::try_parse_file`, `try_com
 | [`examples/agent_counter.neb`](examples/agent_counter.neb) | Probes, telemetry, mutable state |
 | [`examples/io_agent.neb`](examples/io_agent.neb) | Bundle probes (`read_file`, `http_get`, …) |
 | [`examples/runbook.neb`](examples/runbook.neb) | Retry loop, command + MCP probes |
+| [`examples/agent_lib.neb`](examples/agent_lib.neb) + [`agent_lib_harness.py`](examples/agent_lib_harness.py) | Compile a Nebula library, import and call it from Python |
 
 ## Python backend
 

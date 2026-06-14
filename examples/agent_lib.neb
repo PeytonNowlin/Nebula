@@ -1,0 +1,26 @@
+-- A Nebula-authored library, compiled to Python and called from Python infra.
+-- Author typed, checked helpers in Nebula; ship them as a Python module and
+-- call the sector functions directly. See:
+--   docs/author-in-nebula-ship-as-python.md
+--   examples/agent_lib_harness.py  (the Python side)
+
+sector text {
+  -- Return the field at `index` of a comma-separated row.
+  fn field(row: Str, index: Int) -> Str {
+    return at(split(row, ","), index);
+  }
+
+  -- Number of comma-separated fields in a row.
+  fn field_count(row: Str) -> Int {
+    return len(split(row, ","));
+  }
+
+  -- Whether `row` contains `token`.
+  fn has_token(row: Str, token: Str) -> Bool {
+    return contains(row, token);
+  }
+}
+
+mission main {
+  print(text.field("alice,30,engineer", 2));
+}

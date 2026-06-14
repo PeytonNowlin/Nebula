@@ -12,8 +12,10 @@ mission main {
 
   if has(cfg, "mode") and get(cfg, "mode") eq "dry-run" then
     call log(level: "info", message: "dry-run");
+    print("dry-run");
   else
     call write_file(path: "examples/io_output.txt", content: "ready");
     call log(level: "info", message: "wrote output");
+    print("wrote output");
   end
 }

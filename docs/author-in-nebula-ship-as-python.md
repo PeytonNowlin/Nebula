@@ -57,6 +57,12 @@ loop-iteration, and memory caps) — see `--max-runtime-ms` / `--max-loop-iterat
 This is the fast inner loop: the interpreter needs no build step, so an agent can
 generate → check → fix → run in milliseconds.
 
+**Runnable harness.** [`scripts/nebula_agent.py`](../scripts/nebula_agent.py) wraps
+this loop into one entry point: `python scripts/nebula_agent.py loop program.neb`
+emits a single JSON envelope per iteration (`{stage, ready, diagnostics, record}`),
+or import `check` / `run` / `author_loop` as a module. See [`AGENTS.md`](../AGENTS.md)
+for the agent-author guide.
+
 ---
 
 ## 2. Compile to a Python package
@@ -110,6 +116,12 @@ Nebula types map to native Python: `Int`→`int`, `Float`→`float`, `Str`→`st
 `Bool`→`bool`, `List<T>`→`list`, `Map<K,V>`→`dict`, `Option<T>`→value-or-`None`.
 So a service can author validated, typed helpers in Nebula and call them from
 Python like any other module — the typing and checks happen at author time.
+
+**Runnable example.** [`examples/agent_lib.neb`](../examples/agent_lib.neb) is a
+Nebula library; [`examples/agent_lib_harness.py`](../examples/agent_lib_harness.py)
+compiles it and calls its sector functions from Python. The
+`nebula_library_is_callable_from_python` integration test exercises exactly this
+path in CI, so the import-and-call contract is guarded on every commit.
 
 ---
 
