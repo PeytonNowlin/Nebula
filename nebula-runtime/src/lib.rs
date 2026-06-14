@@ -1,3 +1,4 @@
+mod diagnostic_extract;
 mod probe;
 mod probe_manifest;
 

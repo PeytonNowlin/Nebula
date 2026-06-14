@@ -1,3 +1,5 @@
+mod diagnostic_extract;
+
 use std::collections::HashMap;
 
 use miette::Diagnostic;

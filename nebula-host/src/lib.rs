@@ -21,11 +21,12 @@ use nebula_ast::Program;
 use nebula_diagnostics::diagnostics_from_report_with_source;
 use nebula_python::{emit_workspace, EmitOptions};
 use nebula_runtime::{list_probe_manifest, Runtime};
-use nebula_diagnostics::diagnostics_from_type_errors;
-use nebula_types::{typecheck, TypedProgram, TypecheckErrors};
+use nebula_types::{
+    diagnostics_from_type_errors, typecheck, TypedProgram, TypecheckErrors,
+};
 
+pub use nebula_ast::DiagnosticJson;
 pub use nebula_ast::Program as AstProgram;
-pub use nebula_diagnostics::DiagnosticJson;
 pub use nebula_ir::IrProgram;
 pub use nebula_load::LoadedProgram;
 pub use nebula_runtime::Value as HostValue;

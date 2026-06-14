@@ -5,15 +5,5 @@ edition.workspace = true
 
 [dependencies]
 nebula-ast = { path = "../nebula-ast" }
-nebula-syntax = { path = "../nebula-syntax" }
-nebula-load = { path = "../nebula-load" }
-nebula-types = { path = "../nebula-types" }
-nebula-runtime = { path = "../nebula-runtime" }
-nebula-ir = { path = "../nebula-ir" }
 miette.workspace = true
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-[dev-dependencies]
-nebula-syntax = { path = "../nebula-syntax" }
-nebula-types = { path = "../nebula-types" }
+serde_json.workspace = true

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+inventory.workspace = true
 nebula-ast = { path = "../nebula-ast" }
 nebula-syntax = { path = "../nebula-syntax" }
 miette.workspace = true

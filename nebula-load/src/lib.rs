@@ -1,3 +1,5 @@
+mod diagnostic_extract;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -92,6 +94,25 @@ impl nebula_ast::NebError for LoadError {
             | LoadError::LibraryHasMission { span, .. }
             | LoadError::Read { span, .. }
             | LoadError::Parse { span, .. } => Some(span.clone()),
+        }
+    }
+}
+
+impl LoadError {
+    pub fn to_diagnostic_jsons(
+        &self,
+        source: Option<&str>,
+        file: Option<&str>,
+    ) -> Vec<DiagnosticJson> {
+        if let LoadError::Parse { path, source: parse_err, .. } = self {
+            let imported_source = fs::read_to_string(path).ok();
+            let imported_file = path.display().to_string();
+            vec![parse_err.to_diagnostic_json(
+                Some(imported_file.as_str()),
+                imported_source.as_deref(),
+            )]
+        } else {
+            vec![self.to_diagnostic_json(file, source)]
         }
     }
 }
