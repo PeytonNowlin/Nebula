@@ -2,6 +2,29 @@ use nebula_syntax::parse;
 use nebula_types::{typecheck, TypeError};
 
 #[test]
+fn none_unifies_with_any_option_type() {
+    let src = r#"
+sector data {
+  fn greet(name: Option<Str>) -> Str {
+    if name eq None then {
+      return "anonymous";
+    } else {
+      return "hello";
+    }
+  }
+}
+
+mission main {
+  let empty: Option<Str> = None;
+  let also: Option<Int> = None;
+  print(data.greet(empty));
+}
+"#;
+    let program = parse(src).expect("parse");
+    typecheck(&program).expect("None should unify with Option<Str> and Option<Int>");
+}
+
+#[test]
 fn str_plus_str_concatenation_typechecks() {
     let src = r#"
 mission main {

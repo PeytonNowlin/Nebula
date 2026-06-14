@@ -193,6 +193,7 @@ impl Checker {
                 params.iter().map(|p| self.resolve_type(p)).collect(),
                 Box::new(self.resolve_type(ret)),
             ),
+            Type::NoneValue => Type::NoneValue,
             _ => ty.clone(),
         }
     }
@@ -561,7 +562,7 @@ impl Checker {
             Expr::Float(_) => Type::Float,
             Expr::Str(_) => Type::Str,
             Expr::Bool(_) => Type::Bool,
-            Expr::None => Type::Option(Box::new(Type::Int)),
+            Expr::None => Type::NoneValue,
             Expr::Some(inner) => {
                 let inner_ty = self.check_expr_inner(&inner.node, scope, errors);
                 Type::Option(Box::new(inner_ty))
@@ -814,6 +815,8 @@ fn types_equal(a: &Type, b: &Type) -> bool {
         (Type::List(a), Type::List(b)) => types_equal(a, b),
         (Type::Map(ak, av), Type::Map(bk, bv)) => types_equal(ak, bk) && types_equal(av, bv),
         (Type::Option(a), Type::Option(b)) => types_equal(a, b),
+        (Type::NoneValue, Type::NoneValue) => true,
+        (Type::NoneValue, Type::Option(_)) | (Type::Option(_), Type::NoneValue) => true,
         (Type::Named(a), Type::Named(b)) => a == b,
         (Type::Fn(ap, ar), Type::Fn(bp, br)) => {
             ap.len() == bp.len()

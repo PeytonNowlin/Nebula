@@ -199,6 +199,8 @@ pub enum Type {
     List(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Option(Box<Type>),
+    /// Type-checker sentinel: bare `None` unifies with any `Option<T>`.
+    NoneValue,
     Fn(Vec<Type>, Box<Type>),
     Named(String),
 }
@@ -214,6 +216,7 @@ impl Type {
             Type::List(inner) => format!("List<{}>", inner.display()),
             Type::Map(k, v) => format!("Map<{}, {}>", k.display(), v.display()),
             Type::Option(inner) => format!("Option<{}>", inner.display()),
+            Type::NoneValue => "None".into(),
             Type::Fn(params, ret) => {
                 let ps: Vec<_> = params.iter().map(Type::display).collect();
                 format!("fn({}) -> {}", ps.join(", "), ret.display())

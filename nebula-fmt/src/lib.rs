@@ -247,6 +247,7 @@ fn format_type(out: &mut String, ty: &Type) {
             format_type(out, inner);
             out.push('>');
         }
+        Type::NoneValue => out.push_str("None"),
         Type::Fn(params, ret) => {
             out.push_str("fn(");
             for (i, p) in params.iter().enumerate() {

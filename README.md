@@ -8,9 +8,10 @@ This repository contains the Nebula compiler and interpreter, implemented in Rus
 
 - **Keyword-based syntax** — arithmetic and comparisons use words instead of symbols, so parsers and agents can read source without ambiguity.
 - **Sectors** — modular namespaces for functions, structs, and probes (`math.double`, `geo.Point`).
-- **Probes** — declare external capabilities in source; the runtime logs probe invocations for host integration.
+- **Probes** — declare external capabilities in source; `call` invokes them and the runtime logs the invocation (stdout today; host/MCP integration planned).
 - **Telemetry** — `telemetry` blocks emit structured JSONL traces for each statement executed inside them.
 - **Imports** — compose programs from library modules with cycle and duplicate detection.
+- **Agent-oriented tooling** — GBNF grammar at [`grammar/nebula.gbnf`](grammar/nebula.gbnf) for constrained LLM code generation.
 - **Full pipeline** — parse → load/merge → typecheck → IR → interpret, with `check`, `fmt`, and `run` CLI commands.
 
 ## Requirements
@@ -68,40 +69,68 @@ sector math {
 mission main {
   let mut i: Int = 1;
 
-  while i le 20 do {
-    print(math.double(i));
+  while i le 20 do
+    print(int_to_str(math.double(i)));
     set i = i plus 1;
-  }
+  end
 }
 ```
+
+### Sector namespacing
+
+Symbols inside a `sector` are stored as `sector.name`:
+
+- From `mission`, use **qualified** names: `math.double(10)`
+- Inside a sector function, same-sector symbols may be **unqualified**: `double(n)`
+- Builtins and mission-level probes stay unqualified: `print(...)`, `call log(...)`
+
+### Control-flow blocks
+
+`if`, `while`, and `telemetry` accept either brace blocks or `end`-delimited blocks. `nebula fmt` canonicalizes to `end` style:
+
+```nebula
+if count eq 0 then
+  print("zero");
+else
+  print("nonzero");
+end
+```
+
+Brace blocks (`{ ... }`) remain valid and are still used for `sector`, `mission`, `fn`, and `struct` bodies.
 
 ### Types
 
 `Int`, `Float`, `Bool`, `Str`, `Void`, `List<T>`, `Map<K, V>`, `Option<T>`, and function types `fn(T1, T2) -> R`. All bindings, parameters, and returns require explicit annotations.
 
+String concatenation uses keyword `plus`: `"Hello" plus " world"` (both operands must be `Str`).
+
 ### Builtins
 
-Provided by the runtime (see `std/core.neb`):
+Implemented in the runtime (documented in [`std/core.neb`](std/core.neb)):
 
-| Function | Signature |
-|----------|-----------|
-| `print` | `fn(value: Str) -> Void` |
-| `len` | `fn(value: List<T>) -> Int` |
-| `push` | `fn(list: List<T>, value: T) -> Void` |
-| `str_to_int` | `fn(s: Str) -> Int` |
-| `int_to_str` | `fn(n: Int) -> Str` |
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `print` | `fn(value: Str) -> Void` | Writes to stdout |
+| `len` | `fn(value: List<T> or Str) -> Int` | Element count or string length |
+| `push` | `fn(list: List<T>, value: T) -> Void` | Mutates a **list variable** in place; first arg must be an identifier |
+| `str_to_int` | `fn(s: Str) -> Int` | |
+| `int_to_str` | `fn(n: Int) -> Str` | |
+
+### `return` and `emit`
+
+Both exit the current function with a value. `return` is the conventional form; `emit` is available as an agent-friendly alias with identical semantics.
 
 ### Probes and telemetry
 
-Probes declare host-provided capabilities. `call` invokes them at runtime (currently logged to stdout).
+Probes declare capabilities the host is expected to provide. `call` invokes them at runtime; today the interpreter logs probe name and arguments to stdout.
 
 ```nebula
 mission main {
   probe log(level: Str, message: Str) -> Void;
 
-  telemetry {
+  telemetry
     call log(level: "info", message: "starting");
-  }
+  end
 }
 ```
 
@@ -117,7 +146,7 @@ mission main {
 }
 ```
 
-Import paths are relative to the importing file. Library modules may contain sectors and nested imports but must not define a `mission`.
+Import paths are relative to the importing file. Library modules may contain sectors and nested imports but must not define a `mission`. Symbols are merged with sector namespacing (`math.triple`, not a flat global `triple`).
 
 ### Error codes
 
@@ -135,9 +164,9 @@ Import paths are relative to the importing file. Library modules may contain sec
 |------|--------------|
 | `examples/hello.neb` | Minimal program |
 | `examples/fizzbuzz.neb` | Sectors, conditionals, loops |
-| `examples/end_demo.neb` | `end`-style blocks (alternative to braces) |
-| `examples/push_demo.neb` | Lists and builtins |
-| `examples/import_demo.neb` | Standard library imports |
+| `examples/end_demo.neb` | `end`-delimited control-flow blocks |
+| `examples/push_demo.neb` | Lists and `push` / `len` builtins |
+| `examples/import_demo.neb` | Importing `std/math.neb` |
 | `examples/agent_counter.neb` | Probes, telemetry, mutable state |
 
 ## Project structure
@@ -146,7 +175,7 @@ Rust workspace crates, each handling one stage of the pipeline:
 
 | Crate | Role |
 |-------|------|
-| `nebula-syntax` | Lexer and parser (logos + chumsky) |
+| `nebula-syntax` | Lexer (logos) and hand-written recursive-descent parser |
 | `nebula-ast` | Abstract syntax tree types |
 | `nebula-load` | Import resolution and program merging |
 | `nebula-types` | Type checker |
@@ -155,7 +184,15 @@ Rust workspace crates, each handling one stage of the pipeline:
 | `nebula-fmt` | Canonical formatter |
 | `nebula-cli` | `nebula` command-line tool |
 
-The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). Shared library modules are under `std/`.
+The language specification lives in [`nebula-spec/SPEC.md`](nebula-spec/SPEC.md). The GBNF grammar for constrained generation is at [`grammar/nebula.gbnf`](grammar/nebula.gbnf).
+
+[`std/math.neb`](std/math.neb) is an importable library module. [`std/core.neb`](std/core.neb) documents runtime builtins (builtins are not loaded from source — they are implemented in `nebula-runtime`).
+
+## Roadmap (not yet implemented)
+
+- Python transpiler (`nebula compile --target python`)
+- MCP / live probe host integration
+- Loadable stdlib beyond importable `.neb` modules
 
 ## Development
 
