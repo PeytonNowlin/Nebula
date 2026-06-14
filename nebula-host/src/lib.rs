@@ -17,8 +17,9 @@ mod pipeline;
 use std::path::Path;
 
 use miette::Report;
-use nebula_ast::Program;
+use nebula_ast::{NebError, Program};
 use nebula_diagnostics::diagnostics_from_report_with_source;
+use nebula_runtime::RuntimeError;
 use nebula_python::{emit_workspace, EmitOptions};
 use nebula_runtime::{list_probe_manifest, Runtime};
 use nebula_types::{
@@ -156,7 +157,7 @@ impl Host {
             source,
             self.entry_label(None),
         )) {
-            Ok(ir) => adapt_run(self.execute_ir(ir)),
+            Ok(compiled) => self.finish_run(compiled),
             Err(CompileFailure::Typecheck {
                 entry,
                 source,
@@ -169,7 +170,7 @@ impl Host {
     /// Execute a file on disk. Returns structured output for agent loops.
     pub fn run_file(&self, path: impl AsRef<Path>) -> RunResult {
         match self.compile_ir(Pipeline::file(path.as_ref())) {
-            Ok(ir) => adapt_run(self.execute_ir(ir)),
+            Ok(compiled) => self.finish_run(compiled),
             Err(CompileFailure::Typecheck {
                 entry,
                 source,
@@ -236,7 +237,7 @@ impl Host {
         }
     }
 
-    fn compile_ir(&self, pipeline: Pipeline<'_>) -> Result<IrProgram, CompileFailure> {
+    fn compile_ir(&self, pipeline: Pipeline<'_>) -> Result<CompiledIr, CompileFailure> {
         let workspace = pipeline.workspace().map_err(CompileFailure::Report)?;
         let typed = match typecheck(&workspace.loaded.merged) {
             Ok(typed) => typed,
@@ -248,9 +249,45 @@ impl Host {
                 });
             }
         };
-        nebula_ir::lower(&typed)
+        let ir = nebula_ir::lower(&typed)
             .map_err(Report::new)
-            .map_err(CompileFailure::Report)
+            .map_err(CompileFailure::Report)?;
+        Ok(CompiledIr {
+            ir,
+            entry: workspace.entry,
+            source: workspace.source,
+        })
+    }
+
+    fn finish_run(&self, compiled: CompiledIr) -> RunResult {
+        match self.execute_ir_raw(compiled.ir) {
+            Ok(output) => RunResult {
+                ok: true,
+                diagnostics: Vec::new(),
+                printed: output.printed,
+                return_value: output.return_value,
+            },
+            Err(err) => RunResult::fail(vec![err.to_diagnostic_json(
+                Some(&compiled.entry),
+                Some(&compiled.source),
+            )]),
+        }
+    }
+
+    fn execute_ir_raw(&self, ir: IrProgram) -> Result<RunOutput, RuntimeError> {
+        let mut runtime = Runtime::new(&ir).with_capture_print(true);
+        if let Some(manifest) = &self.config.probe_manifest {
+            runtime = runtime.with_probe_manifest(manifest)?;
+        }
+        if let Some(path) = &self.config.telemetry_path {
+            runtime = runtime.with_telemetry(path.to_string_lossy().into_owned());
+        }
+
+        let value = runtime.run(&ir)?;
+        Ok(RunOutput {
+            printed: runtime.take_printed(),
+            return_value: Some(value),
+        })
     }
 
     fn entry_label<'a>(&'a self, override_label: Option<&'a str>) -> &'a str {
@@ -303,6 +340,12 @@ impl RunResult {
             return_value: None,
         }
     }
+}
+
+struct CompiledIr {
+    ir: IrProgram,
+    entry: String,
+    source: String,
 }
 
 enum CompileFailure {

@@ -109,6 +109,59 @@ fn probe_jsonl_event_schema_matches_log_probe_shape() {
 }
 
 #[test]
+fn diagnostic_schema_matches_json_output_shapes() {
+    let validator = load_schema("diagnostic.schema.json");
+
+    // Type error with a full span (as emitted by `check --json`).
+    let with_span = serde_json::json!({
+        "code": "NEB-T002",
+        "span": {
+            "file": "example.neb",
+            "start": 42,
+            "end": 58,
+            "line": 3,
+            "column": 15
+        },
+        "message": "type mismatch: expected Int, found Str"
+    });
+    // Runtime error with no source location (`span` omitted entirely).
+    let without_span = serde_json::json!({
+        "code": "NEB-R004",
+        "message": "division by zero"
+    });
+    // Span tied to no named file serializes `file` as null.
+    let null_file = serde_json::json!({
+        "code": "NEB-L002",
+        "span": { "file": Value::Null, "start": 0, "end": 0 },
+        "message": "circular import"
+    });
+
+    for sample in [&with_span, &without_span, &null_file] {
+        validator
+            .validate(sample)
+            .unwrap_or_else(|_| panic!("diagnostic should validate: {sample}"));
+    }
+}
+
+#[test]
+fn diagnostic_schema_rejects_malformed_records() {
+    let validator = load_schema("diagnostic.schema.json");
+    let bad = [
+        serde_json::json!({ "message": "no code" }),
+        serde_json::json!({ "code": "NEB-T002" }),
+        serde_json::json!({ "code": "lowercase", "message": "bad code" }),
+        serde_json::json!({ "code": "NEB-T002", "message": "x", "extra": 1 }),
+        serde_json::json!({ "code": "NEB-T002", "message": "x", "span": { "start": 1, "end": 2 } }),
+    ];
+    for sample in &bad {
+        assert!(
+            validator.validate(sample).is_err(),
+            "schema should reject malformed diagnostic: {sample}"
+        );
+    }
+}
+
+#[test]
 fn nebula_value_schema_accepts_struct_and_option_wrappers() {
     let validator = load_schema("nebula-value.schema.json");
     let samples = [

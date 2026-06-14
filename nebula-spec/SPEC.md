@@ -178,6 +178,8 @@ Both backends (interpreter and Python transpiler) implement these semantics iden
 | `NEB-P004` | MCP transport / protocol failure |
 | `NEB-L` | Module load / import |
 
+`nebula check --json` and `nebula run --json` emit these as a JSON array of diagnostic records (on stderr) matching [`schemas/diagnostic.schema.json`](../schemas/diagnostic.schema.json) — each record has `code`, `message`, and an optional `span` (`file`, `start`, `end`, and 1-based `line`/`column` when source is available). The same shape is returned by the `nebula-host` embedding crate.
+
 ## 9. Probe host manifest (MCP)
 
 Probe manifests may include an `mcp_servers` map and probe bindings with `"kind": "mcp"`:

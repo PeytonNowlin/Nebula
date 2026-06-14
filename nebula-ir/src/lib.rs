@@ -98,8 +98,11 @@ pub enum IrStmt {
     },
 }
 
+/// IR expression with source span preserved from the AST for runtime diagnostics.
+pub type IrExpr = Spanned<IrExprKind>;
+
 #[derive(Debug, Clone, serde::Serialize)]
-pub enum IrExpr {
+pub enum IrExprKind {
     Int(i64),
     Float(f64),
     Str(String),
@@ -228,35 +231,35 @@ fn lower_stmt(stmt: &Stmt) -> IrStmt {
         } => IrStmt::Let {
             name: name.node.clone(),
             mutable: *mutable,
-            value: lower_expr(&value.node),
+            value: lower_expr(value),
         },
         Stmt::Set { name, value } => IrStmt::Set {
             name: name.node.clone(),
-            value: lower_expr(&value.node),
+            value: lower_expr(value),
         },
         Stmt::If {
             condition,
             then_block,
             else_block,
         } => IrStmt::If {
-            condition: lower_expr(&condition.node),
+            condition: lower_expr(condition),
             then_body: then_block.iter().map(|s| lower_stmt(&s.node)).collect(),
             else_body: else_block
                 .as_ref()
                 .map(|b| b.iter().map(|s| lower_stmt(&s.node)).collect()),
         },
         Stmt::While { condition, body } => IrStmt::While {
-            condition: lower_expr(&condition.node),
+            condition: lower_expr(condition),
             body: body.iter().map(|s| lower_stmt(&s.node)).collect(),
         },
-        Stmt::Emit(expr) | Stmt::Return(expr) => IrStmt::Return(lower_expr(&expr.node)),
-        Stmt::Expr(expr) => IrStmt::Expr(lower_expr(&expr.node)),
+        Stmt::Emit(expr) | Stmt::Return(expr) => IrStmt::Return(lower_expr(expr)),
+        Stmt::Expr(expr) => IrStmt::Expr(lower_expr(expr)),
         Stmt::Call { name, args } => {
             let mut arg_map = HashMap::new();
             for arg in args {
                 arg_map.insert(
                     arg.node.name.node.clone(),
-                    lower_expr(&arg.node.value.node),
+                    lower_expr(&arg.node.value),
                 );
             }
             IrStmt::ProbeCall {
@@ -270,47 +273,51 @@ fn lower_stmt(stmt: &Stmt) -> IrStmt {
     }
 }
 
-fn lower_expr(expr: &Expr) -> IrExpr {
+fn lower_expr(expr: &Spanned<Expr>) -> IrExpr {
+    Spanned::new(lower_expr_kind(&expr.node), expr.span.clone())
+}
+
+fn lower_expr_kind(expr: &Expr) -> IrExprKind {
     match expr {
-        Expr::Int(n) => IrExpr::Int(*n),
-        Expr::Float(n) => IrExpr::Float(*n),
-        Expr::Str(s) => IrExpr::Str(s.clone()),
-        Expr::Bool(b) => IrExpr::Bool(*b),
-        Expr::None => IrExpr::None,
-        Expr::Some(inner) => IrExpr::Some(Box::new(lower_expr(&inner.node))),
-        Expr::Ident(name) => IrExpr::Var(name.node.clone()),
-        Expr::Unary { op, operand } => IrExpr::Unary {
+        Expr::Int(n) => IrExprKind::Int(*n),
+        Expr::Float(n) => IrExprKind::Float(*n),
+        Expr::Str(s) => IrExprKind::Str(s.clone()),
+        Expr::Bool(b) => IrExprKind::Bool(*b),
+        Expr::None => IrExprKind::None,
+        Expr::Some(inner) => IrExprKind::Some(Box::new(lower_expr(inner))),
+        Expr::Ident(name) => IrExprKind::Var(name.node.clone()),
+        Expr::Unary { op, operand } => IrExprKind::Unary {
             op: *op,
-            operand: Box::new(lower_expr(&operand.node)),
+            operand: Box::new(lower_expr(operand)),
         },
-        Expr::Binary { left, op, right } => IrExpr::Binary {
-            left: Box::new(lower_expr(&left.node)),
+        Expr::Binary { left, op, right } => IrExprKind::Binary {
+            left: Box::new(lower_expr(left)),
             op: *op,
-            right: Box::new(lower_expr(&right.node)),
+            right: Box::new(lower_expr(right)),
         },
-        Expr::Call { callee, args } => IrExpr::Call {
+        Expr::Call { callee, args } => IrExprKind::Call {
             name: callee.node.clone(),
-            args: args.iter().map(|a| lower_expr(&a.node)).collect(),
+            args: args.iter().map(|a| lower_expr(a)).collect(),
         },
-        Expr::List(items) => IrExpr::List(items.iter().map(|i| lower_expr(&i.node)).collect()),
-        Expr::Map(entries) => IrExpr::Map(
+        Expr::List(items) => IrExprKind::List(items.iter().map(|i| lower_expr(i)).collect()),
+        Expr::Map(entries) => IrExprKind::Map(
             entries
                 .iter()
-                .map(|e| (lower_expr(&e.node.key.node), lower_expr(&e.node.value.node)))
+                .map(|e| (lower_expr(&e.node.key), lower_expr(&e.node.value)))
                 .collect(),
         ),
         Expr::StructLit { name, fields } => {
             let mut map = HashMap::new();
             for f in fields {
-                map.insert(f.node.name.node.clone(), lower_expr(&f.node.value.node));
+                map.insert(f.node.name.node.clone(), lower_expr(&f.node.value));
             }
-            IrExpr::Struct {
+            IrExprKind::Struct {
                 name: name.node.clone(),
                 fields: map,
             }
         }
-        Expr::FieldAccess { object, field } => IrExpr::FieldAccess {
-            object: Box::new(lower_expr(&object.node)),
+        Expr::FieldAccess { object, field } => IrExprKind::FieldAccess {
+            object: Box::new(lower_expr(object)),
             field: field.node.clone(),
         },
     }

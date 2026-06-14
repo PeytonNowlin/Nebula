@@ -60,6 +60,26 @@ fn format_file_loads_workspace_modules() {
 }
 
 #[test]
+fn run_source_divide_by_zero_includes_line_and_column() {
+    let host = Host::new();
+    let result = host.run_source(
+        r#"mission main {
+  let x: Int = 1 div 0;
+}
+"#,
+    );
+    assert!(!result.ok);
+    assert_eq!(result.diagnostics.len(), 1);
+    let diag = &result.diagnostics[0];
+    assert_eq!(diag.code, "NEB-R004");
+    assert_eq!(diag.message, "division by zero");
+    let span = diag.span.as_ref().expect("runtime diagnostic span");
+    assert_eq!(span.line, Some(2));
+    assert!(span.column.unwrap_or(0) > 0);
+    assert!(span.start < span.end);
+}
+
+#[test]
 fn host_config_is_reused_across_calls() {
     let host = Host::with_config(HostConfig {
         source_entry_label: Some("agent.neb".into()),

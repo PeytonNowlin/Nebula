@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diagnostic.schema.json",
+  "title": "NebulaDiagnostic",
+  "description": "One agent-oriented diagnostic record. `nebula check --json` and `nebula run --json` emit a JSON array of these on stderr when compilation or execution fails (an empty array `[]` on success for `check`). The same shape is returned as `DiagnosticJson` by the `nebula-host` embedding crate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^NEB-[A-Z][0-9]{3}$",
+      "description": "Stable structured error code. The letter identifies the category: S=syntax/parse, T=type, R=runtime, P=probe, L=module load/import.",
+      "examples": ["NEB-S002", "NEB-T002", "NEB-R004", "NEB-P004", "NEB-L003"]
+    },
+    "message": {
+      "type": "string",
+      "description": "Human- and agent-readable description of the diagnostic, without the code prefix."
+    },
+    "span": {
+      "$ref": "#/$defs/span",
+      "description": "Source location of the diagnostic. Omitted entirely when no location is available (e.g. some runtime errors)."
+    }
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end"],
+      "description": "Byte span into the source, with optional 1-based line/column when source text was available.",
+      "properties": {
+        "file": {
+          "type": ["string", "null"],
+          "description": "Source file path, or null when the diagnostic is not tied to a named file."
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Inclusive start byte offset into the source."
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exclusive end byte offset into the source (>= start)."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of `start`. Present only when source text was available."
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based column number of `start`. Present only when source text was available."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "code": "NEB-T002",
+      "message": "type mismatch: expected Int, found Str",
+      "span": { "file": "example.neb", "start": 42, "end": 58, "line": 3, "column": 15 }
+    },
+    {
+      "code": "NEB-R004",
+      "message": "division by zero",
+      "span": { "file": "example.neb", "start": 28, "end": 35, "line": 2, "column": 16 }
+    }
+  ]
+}

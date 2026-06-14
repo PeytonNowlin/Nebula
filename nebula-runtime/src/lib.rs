@@ -11,7 +11,8 @@ use std::path::Path;
 use miette::Diagnostic;
 use nebula_ast::{BinaryOp, UnaryOp};
 use nebula_builtins::is_builtin;
-use nebula_ir::{IrExpr, IrProgram, IrStmt};
+use nebula_ast::Span;
+use nebula_ir::{IrExpr, IrExprKind, IrProgram, IrStmt};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -62,23 +63,27 @@ pub enum RuntimeError {
 
     #[error("NEB-R003 [runtime_error] undefined variable `{name}`")]
     #[diagnostic(code(nebula::undefined_var))]
-    UndefinedVar { name: String },
+    UndefinedVar { name: String, span: Span },
 
     #[error("NEB-R004 [runtime_error] division by zero")]
     #[diagnostic(code(nebula::divide_by_zero))]
-    DivideByZero,
+    DivideByZero { span: Span },
 
     #[error("NEB-R005 [runtime_error] list index {index} out of bounds (len {len})")]
     #[diagnostic(code(nebula::index_out_of_bounds))]
-    IndexOutOfBounds { index: i64, len: usize },
+    IndexOutOfBounds {
+        index: i64,
+        len: usize,
+        span: Span,
+    },
 
     #[error("NEB-R006 [runtime_error] key `{key}` not found in map")]
     #[diagnostic(code(nebula::key_not_found))]
-    KeyNotFound { key: String },
+    KeyNotFound { key: String, span: Span },
 
     #[error("NEB-R007 [runtime_error] integer overflow in `{op}`")]
     #[diagnostic(code(nebula::integer_overflow))]
-    IntegerOverflow { op: String },
+    IntegerOverflow { op: String, span: Span },
 }
 
 impl nebula_ast::NebError for RuntimeError {
@@ -90,7 +95,7 @@ impl nebula_ast::NebError for RuntimeError {
             RuntimeError::ProbeFailed { .. } => "NEB-P003",
             RuntimeError::McpTransport { .. } => "NEB-P004",
             RuntimeError::UndefinedVar { .. } => "NEB-R003",
-            RuntimeError::DivideByZero => "NEB-R004",
+            RuntimeError::DivideByZero { .. } => "NEB-R004",
             RuntimeError::IndexOutOfBounds { .. } => "NEB-R005",
             RuntimeError::KeyNotFound { .. } => "NEB-R006",
             RuntimeError::IntegerOverflow { .. } => "NEB-R007",
@@ -113,7 +118,7 @@ impl nebula_ast::NebError for RuntimeError {
                 format!("MCP transport error: {message}")
             }
             RuntimeError::UndefinedVar { name, .. } => format!("undefined variable `{name}`"),
-            RuntimeError::DivideByZero => "division by zero".to_string(),
+            RuntimeError::DivideByZero { .. } => "division by zero".to_string(),
             RuntimeError::IndexOutOfBounds { index, len, .. } => {
                 format!("list index {index} out of bounds (len {len})")
             }
@@ -125,7 +130,14 @@ impl nebula_ast::NebError for RuntimeError {
     }
 
     fn neb_span(&self) -> Option<nebula_ast::Span> {
-        None
+        match self {
+            RuntimeError::UndefinedVar { span, .. }
+            | RuntimeError::DivideByZero { span }
+            | RuntimeError::IndexOutOfBounds { span, .. }
+            | RuntimeError::KeyNotFound { span, .. }
+            | RuntimeError::IntegerOverflow { span, .. } => Some(span.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -199,7 +211,7 @@ impl Runtime {
     /// Coverage hook used by sync tests to verify manifest builtins dispatch.
     #[doc(hidden)]
     pub fn eval_builtin_for_coverage(&mut self, name: &str) -> Result<Value, RuntimeError> {
-        self.eval_builtin(name, &[])
+        self.eval_builtin(name, &[], 0..0)
     }
 
     pub fn run(&mut self, program: &IrProgram) -> Result<Value, RuntimeError> {
@@ -222,7 +234,10 @@ impl Runtime {
             }
             IrStmt::Set { name, value } => {
                 if !self.env.contains_key(name) {
-                    return Err(RuntimeError::UndefinedVar { name: name.clone() });
+                    return Err(RuntimeError::UndefinedVar {
+                        name: name.clone(),
+                        span: value.span.clone(),
+                    });
                 }
                 let v = self.eval_expr(value)?;
                 self.env.insert(name.clone(), v);
@@ -294,32 +309,31 @@ impl Runtime {
     }
 
     fn eval_expr(&mut self, expr: &IrExpr) -> Result<Value, RuntimeError> {
-        match expr {
-            IrExpr::Int(n) => Ok(Value::Int(*n)),
-            IrExpr::Float(n) => Ok(Value::Float(*n)),
-            IrExpr::Str(s) => Ok(Value::Str(s.clone())),
-            IrExpr::Bool(b) => Ok(Value::Bool(*b)),
-            IrExpr::None => Ok(Value::None),
-            IrExpr::Some(inner) => Ok(Value::Some(Box::new(self.eval_expr(inner)?))),
-            IrExpr::Var(name) => self
-                .env
-                .get(name)
-                .cloned()
-                .ok_or(RuntimeError::UndefinedVar { name: name.clone() }),
-            IrExpr::Unary { op, operand } => {
+        match &expr.node {
+            IrExprKind::Int(n) => Ok(Value::Int(*n)),
+            IrExprKind::Float(n) => Ok(Value::Float(*n)),
+            IrExprKind::Str(s) => Ok(Value::Str(s.clone())),
+            IrExprKind::Bool(b) => Ok(Value::Bool(*b)),
+            IrExprKind::None => Ok(Value::None),
+            IrExprKind::Some(inner) => Ok(Value::Some(Box::new(self.eval_expr(inner)?))),
+            IrExprKind::Var(name) => self.env.get(name).cloned().ok_or(RuntimeError::UndefinedVar {
+                name: name.clone(),
+                span: expr.span.clone(),
+            }),
+            IrExprKind::Unary { op, operand } => {
                 let v = self.eval_expr(operand)?;
                 match op {
                     UnaryOp::Not => Ok(Value::Bool(!is_truthy(&v))),
                 }
             }
-            IrExpr::Binary { left, op, right } => {
+            IrExprKind::Binary { left, op, right } => {
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
-                eval_binary(*op, l, r)
+                eval_binary(*op, l, r, expr.span.clone())
             }
-            IrExpr::Call { name, args } => {
+            IrExprKind::Call { name, args } => {
                 if is_builtin(name) {
-                    return self.eval_builtin(name, args);
+                    return self.eval_builtin(name, args, expr.span.clone());
                 }
 
                 let resolved = self.resolve_function(name);
@@ -360,14 +374,14 @@ impl Runtime {
                 self.current_sector = saved_sector;
                 Ok(result)
             }
-            IrExpr::List(items) => {
+            IrExprKind::List(items) => {
                 let mut vals = Vec::new();
                 for item in items {
                     vals.push(self.eval_expr(item)?);
                 }
                 Ok(Value::List(vals))
             }
-            IrExpr::Map(entries) => {
+            IrExprKind::Map(entries) => {
                 let mut map = HashMap::new();
                 for (k, v) in entries {
                     let key = value_to_string(&self.eval_expr(k)?)?;
@@ -375,7 +389,7 @@ impl Runtime {
                 }
                 Ok(Value::Map(map))
             }
-            IrExpr::Struct { name, fields } => {
+            IrExprKind::Struct { name, fields } => {
                 let mut map = HashMap::new();
                 for (k, v) in fields {
                     map.insert(k.clone(), self.eval_expr(v)?);
@@ -385,7 +399,7 @@ impl Runtime {
                     fields: map,
                 })
             }
-            IrExpr::FieldAccess { object, field } => {
+            IrExprKind::FieldAccess { object, field } => {
                 let val = self.eval_expr(object)?;
                 match val {
                     Value::Struct { fields, .. } => fields
@@ -450,7 +464,7 @@ impl Runtime {
     }
 }
 
-fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
+fn eval_binary(op: BinaryOp, l: Value, r: Value, span: Span) -> Result<Value, RuntimeError> {
     match op {
         BinaryOp::Plus => match (l, r) {
             // Integer arithmetic is checked: overflow is a deterministic error
@@ -459,7 +473,10 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
             (Value::Int(a), Value::Int(b)) => a
                 .checked_add(b)
                 .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow { op: "plus".into() }),
+                .ok_or(RuntimeError::IntegerOverflow {
+                    op: "plus".into(),
+                    span: span.clone(),
+                }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Str(mut a), Value::Str(b)) => {
                 a.push_str(&b);
@@ -473,7 +490,10 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
             (Value::Int(a), Value::Int(b)) => a
                 .checked_sub(b)
                 .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow { op: "minus".into() }),
+                .ok_or(RuntimeError::IntegerOverflow {
+                    op: "minus".into(),
+                    span: span.clone(),
+                }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid minus operands".into(),
@@ -483,34 +503,43 @@ fn eval_binary(op: BinaryOp, l: Value, r: Value) -> Result<Value, RuntimeError> 
             (Value::Int(a), Value::Int(b)) => a
                 .checked_mul(b)
                 .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow { op: "times".into() }),
+                .ok_or(RuntimeError::IntegerOverflow {
+                    op: "times".into(),
+                    span: span.clone(),
+                }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid times operands".into(),
             }),
         },
         BinaryOp::Div => match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
             // Integer div truncates toward zero (C-style); the Python backend
             // mirrors this in `nebula_div`. `checked_div` also traps the lone
             // overflowing case, i64::MIN / -1.
             (Value::Int(a), Value::Int(b)) => a
                 .checked_div(b)
                 .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow { op: "div".into() }),
-            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
+                .ok_or(RuntimeError::IntegerOverflow {
+                    op: "div".into(),
+                    span: span.clone(),
+                }),
+            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
             _ => Err(RuntimeError::Error {
                 message: "invalid div operands".into(),
             }),
         },
         BinaryOp::Mod => match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero),
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::DivideByZero { span: span.clone() }),
             (Value::Int(a), Value::Int(b)) => a
                 .checked_rem(b)
                 .map(Value::Int)
-                .ok_or(RuntimeError::IntegerOverflow { op: "mod".into() }),
-            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero),
+                .ok_or(RuntimeError::IntegerOverflow {
+                    op: "mod".into(),
+                    span: span.clone(),
+                }),
+            (Value::Float(_), Value::Float(0.0)) => Err(RuntimeError::DivideByZero { span }),
             // f64 `%` keeps the sign of the dividend, matching Python math.fmod.
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a % b)),
             _ => Err(RuntimeError::Error {

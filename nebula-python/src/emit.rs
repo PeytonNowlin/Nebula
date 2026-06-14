@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use nebula_ast::{BinaryOp, UnaryOp};
 use nebula_builtins::manifest;
-use nebula_ir::{IrExpr, IrFunction, IrProgram, IrStmt};
+use nebula_ir::{IrExpr, IrExprKind, IrFunction, IrProgram, IrStmt};
 use nebula_load::LoadedProgram;
 
 use crate::error::EmitError;
@@ -429,18 +429,18 @@ impl<'a> ModuleEmitter<'a> {
     }
 
     fn emit_expr(&self, expr: &IrExpr) -> Result<String, EmitError> {
-        Ok(match expr {
-            IrExpr::Int(n) => n.to_string(),
-            IrExpr::Float(n) => python_float(*n),
-            IrExpr::Str(s) => python_string(s),
-            IrExpr::Bool(b) => if *b { "True" } else { "False" }.to_string(),
-            IrExpr::None => "None".to_string(),
-            IrExpr::Some(inner) => self.emit_expr(inner)?,
-            IrExpr::Var(name) => name.clone(),
-            IrExpr::Unary { op, operand } => match op {
+        Ok(match &expr.node {
+            IrExprKind::Int(n) => n.to_string(),
+            IrExprKind::Float(n) => python_float(*n),
+            IrExprKind::Str(s) => python_string(s),
+            IrExprKind::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+            IrExprKind::None => "None".to_string(),
+            IrExprKind::Some(inner) => self.emit_expr(inner)?,
+            IrExprKind::Var(name) => name.clone(),
+            IrExprKind::Unary { op, operand } => match op {
                 UnaryOp::Not => format!("(not nebula_truthy({}))", self.emit_expr(operand)?),
             },
-            IrExpr::Binary { left, op, right } => {
+            IrExprKind::Binary { left, op, right } => {
                 let l = self.emit_expr(left)?;
                 let r = self.emit_expr(right)?;
                 match op {
@@ -462,7 +462,7 @@ impl<'a> ModuleEmitter<'a> {
                     BinaryOp::Or => format!("(nebula_truthy({l}) or nebula_truthy({r}))"),
                 }
             }
-            IrExpr::Call { name, args } => {
+            IrExprKind::Call { name, args } => {
                 let callee = self.resolve_call_name(name);
                 let rendered_args: Result<Vec<_>, _> =
                     args.iter().map(|arg| self.emit_expr(arg)).collect();
@@ -473,11 +473,11 @@ impl<'a> ModuleEmitter<'a> {
                     format!("{callee}({})", rendered_args.join(", "))
                 }
             }
-            IrExpr::List(items) => {
+            IrExprKind::List(items) => {
                 let parts: Result<Vec<_>, _> = items.iter().map(|i| self.emit_expr(i)).collect();
                 format!("[{}]", parts?.join(", "))
             }
-            IrExpr::Map(entries) => {
+            IrExprKind::Map(entries) => {
                 let mut parts = Vec::new();
                 for (key, value) in entries {
                     parts.push(format!(
@@ -488,7 +488,7 @@ impl<'a> ModuleEmitter<'a> {
                 }
                 format!("{{{}}}", parts.join(", "))
             }
-            IrExpr::Struct { name, fields } => {
+            IrExprKind::Struct { name, fields } => {
                 let mut field_parts = Vec::new();
                 for (field, value) in fields {
                     field_parts.push(format!(
@@ -503,7 +503,7 @@ impl<'a> ModuleEmitter<'a> {
                     field_parts.join(", ")
                 )
             }
-            IrExpr::FieldAccess { object, field } => {
+            IrExprKind::FieldAccess { object, field } => {
                 format!(
                     "nebula_field({}, {})",
                     self.emit_expr(object)?,

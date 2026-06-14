@@ -1,5 +1,6 @@
+use nebula_ast::Span;
 use nebula_builtins::{manifest, BuiltinCheckerKind};
-use nebula_ir::IrExpr;
+use nebula_ir::{IrExpr, IrExprKind};
 
 use crate::{Runtime, RuntimeError, Value};
 
@@ -54,6 +55,7 @@ impl Runtime {
         &mut self,
         name: &str,
         args: &[IrExpr],
+        span: Span,
     ) -> Result<Value, RuntimeError> {
         let Some(def) = manifest().get(name) else {
             return Err(RuntimeError::Error {
@@ -63,12 +65,12 @@ impl Runtime {
 
         match def.checker {
             BuiltinCheckerKind::Simple => self.eval_simple_builtin(name, args),
-            BuiltinCheckerKind::Len => self.eval_len(args),
-            BuiltinCheckerKind::Push => self.eval_push(args),
-            BuiltinCheckerKind::At => self.eval_at(args),
-            BuiltinCheckerKind::Get => self.eval_get(args),
-            BuiltinCheckerKind::Has => self.eval_has(args),
-            BuiltinCheckerKind::Insert => self.eval_insert(args),
+            BuiltinCheckerKind::Len => self.eval_len(args, span),
+            BuiltinCheckerKind::Push => self.eval_push(args, span),
+            BuiltinCheckerKind::At => self.eval_at(args, span),
+            BuiltinCheckerKind::Get => self.eval_get(args, span),
+            BuiltinCheckerKind::Has => self.eval_has(args, span),
+            BuiltinCheckerKind::Insert => self.eval_insert(args, span),
         }
     }
 
@@ -102,7 +104,7 @@ impl Runtime {
         Ok(Value::None)
     }
 
-    fn eval_len(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_len(&mut self, args: &[IrExpr], _span: Span) -> Result<Value, RuntimeError> {
         let v = self.eval_expr(args.first().ok_or(RuntimeError::Error {
             message: "len requires argument".into(),
         })?)?;
@@ -118,15 +120,15 @@ impl Runtime {
         }
     }
 
-    fn eval_push(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_push(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::Error {
                 message: "push requires exactly 2 arguments".into(),
             });
         }
 
-        let list_name = match args.first() {
-            Some(IrExpr::Var(name)) => name.clone(),
+        let list_name = match args.first().map(|arg| &arg.node) {
+            Some(IrExprKind::Var(name)) => name.clone(),
             _ => {
                 return Err(RuntimeError::Error {
                     message: "push requires a list variable as first argument".into(),
@@ -155,11 +157,14 @@ impl Runtime {
             Some(_) => Err(RuntimeError::Error {
                 message: format!("`{list_name}` is not a list"),
             }),
-            None => Err(RuntimeError::UndefinedVar { name: list_name }),
+            None => Err(RuntimeError::UndefinedVar {
+                name: list_name,
+                span: span.clone(),
+            }),
         }
     }
 
-    fn eval_at(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_at(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::Error {
                 message: "at requires exactly 2 arguments".into(),
@@ -180,6 +185,7 @@ impl Runtime {
                     return Err(RuntimeError::IndexOutOfBounds {
                         index,
                         len: items.len(),
+                        span: span.clone(),
                     });
                 }
                 Ok(items[index as usize].clone())
@@ -190,7 +196,7 @@ impl Runtime {
         }
     }
 
-    fn eval_get(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_get(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::Error {
                 message: "get requires exactly 2 arguments".into(),
@@ -202,14 +208,17 @@ impl Runtime {
             Value::Map(entries) => entries
                 .get(&key)
                 .cloned()
-                .ok_or(RuntimeError::KeyNotFound { key }),
+                .ok_or(RuntimeError::KeyNotFound {
+                    key,
+                    span: span.clone(),
+                }),
             _ => Err(RuntimeError::Error {
                 message: "get requires a map as first argument".into(),
             }),
         }
     }
 
-    fn eval_has(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_has(&mut self, args: &[IrExpr], _span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::Error {
                 message: "has requires exactly 2 arguments".into(),
@@ -225,7 +234,7 @@ impl Runtime {
         }
     }
 
-    fn eval_insert(&mut self, args: &[IrExpr]) -> Result<Value, RuntimeError> {
+    fn eval_insert(&mut self, args: &[IrExpr], span: Span) -> Result<Value, RuntimeError> {
         if args.len() != 3 {
             return Err(RuntimeError::Error {
                 message: "insert requires exactly 3 arguments".into(),
@@ -233,8 +242,8 @@ impl Runtime {
         }
         // First argument must be a map variable so it is mutated in place,
         // mirroring `push` on lists.
-        let map_name = match args.first() {
-            Some(IrExpr::Var(name)) => name.clone(),
+        let map_name = match args.first().map(|arg| &arg.node) {
+            Some(IrExprKind::Var(name)) => name.clone(),
             _ => {
                 return Err(RuntimeError::Error {
                     message: "insert requires a map variable as first argument".into(),
@@ -251,7 +260,10 @@ impl Runtime {
             Some(_) => Err(RuntimeError::Error {
                 message: format!("`{map_name}` is not a map"),
             }),
-            None => Err(RuntimeError::UndefinedVar { name: map_name }),
+            None => Err(RuntimeError::UndefinedVar {
+                name: map_name,
+                span: span.clone(),
+            }),
         }
     }
 
@@ -415,7 +427,7 @@ mod tests {
     fn dispatch_does_not_hit_missing_handler_arm() {
         let mut rt = Runtime::new(&empty_program());
         for name in manifest().names() {
-            let result = rt.eval_builtin(name, &[]);
+            let result = rt.eval_builtin(name, &[], 0..0);
             if let Err(RuntimeError::Error { message }) = result {
                 assert!(
                     !message.contains(MISSING_HANDLER_MARKER),

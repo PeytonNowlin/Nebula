@@ -145,6 +145,7 @@ Structured runtime events are documented as JSON Schema files under [`schemas/`]
 
 | Schema | Used by |
 |--------|---------|
+| [`diagnostic.schema.json`](schemas/diagnostic.schema.json) | `check --json` / `run --json` error records and `nebula-host` `DiagnosticJson` (`code`, `message`, optional `span`) |
 | [`telemetry-event.schema.json`](schemas/telemetry-event.schema.json) | `telemetry` block JSONL traces (`step`, `detail`) |
 | [`probe-jsonl-event.schema.json`](schemas/probe-jsonl-event.schema.json) | `jsonl` probe handler output (`ts`, `probe`, `args`) |
 | [`nebula-value.schema.json`](schemas/nebula-value.schema.json) | Probe argument values in JSONL and command-probe protocols |
