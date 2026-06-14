@@ -60,3 +60,12 @@ jobs:
         run: |
           cargo run --release -- compile examples/import_demo.neb --target python --out dist/
           python dist/examples/import_demo.py
+
+      # Shared-runtime deploy path: pip-install nebula_runtime once, then run a
+      # compiled program with its vendored copy removed. See python/README.md.
+      - name: Verify pip-installable nebula_runtime
+        run: |
+          pip install ./python
+          cargo run --release -- compile examples/hello.neb --target python --out shared/
+          rm -rf shared/nebula_runtime
+          python shared/hello.py

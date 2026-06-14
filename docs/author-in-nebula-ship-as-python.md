@@ -87,6 +87,13 @@ dist/
 - The `nebula_runtime/` shim is copied in, so the package is self-contained — no
   `pip install` of Nebula required on the deployment host (only Python 3).
 
+**Shared runtime (optional).** Teams running many compiled modules in one Python
+environment can install the runtime once instead of vendoring a copy per build:
+`pip install nebula-runtime` (or `pip install ./python` from a checkout). Compiled
+modules then resolve `from nebula_runtime import …` from the environment and the
+vendored `dist/nebula_runtime/` directory can be dropped. See
+[`python/README.md`](../python/README.md).
+
 ---
 
 ## 3. Run it in your Python infrastructure
